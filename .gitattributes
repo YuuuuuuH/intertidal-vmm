@@ -1,0 +1,9 @@
+# intertidal-vmm.patch intentionally contains diff context lines whose single
+# leading space is part of unified-diff syntax.  Do not flag those as source
+# trailing whitespace when checking this repository itself; the applied C++
+# sources are checked normally.
+intertidal-vmm.patch -whitespace
+# csv.writer emits CRLF by design and raw benchmark logs preserve upstream
+# spacing verbatim.  Treat these measurements as data, not source formatting.
+results/*.csv -whitespace
+results/*.log -whitespace

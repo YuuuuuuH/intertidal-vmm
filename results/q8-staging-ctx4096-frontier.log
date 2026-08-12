@@ -1,0 +1,677 @@
+q8_ctxfrontier,start,ctx=4096,pages=779
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 32109 MiB):
+  Device 0: NVIDIA GeForce RTX 5090, compute capability 12.0, VMM: yes, VRAM: 32109 MiB
+hybrid_vmm,mode=staging,selection=global_budget,requested_pages=779,requested_bytes=1633681408,requested_mib=1558.000,gross_pages=779,gross_bytes=1633681408,gross_mib=1558.000,staging_bytes=58720256,staging_mib=56.000,net_bytes=1574961152,net_mib=1502.000,eligible_pages=14428,selected_tensors=410,layers=60,buffer_bytes=31117259520,local_physical_bytes=29483859968,page_bytes=2097152,buffer_mib=29675.731,remote_mib=1558.000,local_physical_mib=28118.000,net_saved_mib=1502.000,page_mib=2.000
+logit_checksum,prompt,59ba2d5c26151ca8,nonfinite=0
+[
+  {
+    "build_commit": "b820cc8",
+    "build_number": 1,
+    "cpu_info": "Intel(R) Core(TM) Ultra 5 230F",
+    "gpu_info": "NVIDIA GeForce RTX 5090",
+    "backends": "CUDA",
+    "model_filename": "/home/wici/gemma-4-31B-it-Q8_0.gguf",
+    "model_type": "gemma4 31B Q8_0",
+    "model_size": 32619841776,
+    "model_n_params": 30697345596,
+    "n_batch": 128,
+    "n_ubatch": 128,
+    "n_threads": 8,
+    "cpu_mask": "0x0",
+    "cpu_strict": false,
+    "poll": 50,
+    "type_k": "f16",
+    "type_v": "f16",
+    "n_gpu_layers": 61,
+    "n_cpu_moe": 0,
+    "split_mode": "layer",
+    "main_gpu": 0,
+    "no_kv_offload": false,
+    "flash_attn": 1,
+    "devices": "auto",
+    "tensor_split": "0.00",
+    "tensor_buft_overrides": "^blk[.][0-9]+[.](attn_(k|v|q|output)|ffn_(down|gate|up))[.]weight$=CUDA_Hybrid",
+    "use_mmap": true,
+    "use_direct_io": false,
+    "embeddings": false,
+    "no_op_offload": 0,
+    "no_host": false,
+    "fit_target": 0,
+    "fit_min_ctx": 0,
+    "n_ctx": 4096,
+    "n_prompt": 4088,
+    "n_gen": 8,
+    "n_depth": 0,
+    "test_time": "2026-08-12T10:25:06Z",
+    "avg_ns": 1833792507,
+    "stddev_ns": 0,
+    "avg_ts": 2233.622389,
+    "stddev_ts": 0.000000,
+    "samples_ns": [ 1833792507 ],
+    "samples_ts": [ 2233.62 ]
+  }logit_checksum,decode,12747e2469c17d3f,nonfinite=0
+
+]
+q8_ctxfrontier,end,ctx=4096,pages=779,rc=0
+q8_ctxfrontier,start,ctx=4096,pages=701
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 32109 MiB):
+  Device 0: NVIDIA GeForce RTX 5090, compute capability 12.0, VMM: yes, VRAM: 32109 MiB
+hybrid_vmm,mode=staging,selection=global_budget,requested_pages=701,requested_bytes=1470103552,requested_mib=1402.000,gross_pages=701,gross_bytes=1470103552,gross_mib=1402.000,staging_bytes=50331648,staging_mib=48.000,net_bytes=1419771904,net_mib=1354.000,eligible_pages=14428,selected_tensors=410,layers=60,buffer_bytes=31117259520,local_physical_bytes=29647437824,page_bytes=2097152,buffer_mib=29675.731,remote_mib=1402.000,local_physical_mib=28274.000,net_saved_mib=1354.000,page_mib=2.000
+logit_checksum,prompt,59ba2d5c26151ca8,nonfinite=0
+logit_checksum,decode,12747e2469c17d3f,nonfinite=0
+[
+  {
+    "build_commit": "b820cc8",
+    "build_number": 1,
+    "cpu_info": "Intel(R) Core(TM) Ultra 5 230F",
+    "gpu_info": "NVIDIA GeForce RTX 5090",
+    "backends": "CUDA",
+    "model_filename": "/home/wici/gemma-4-31B-it-Q8_0.gguf",
+    "model_type": "gemma4 31B Q8_0",
+    "model_size": 32619841776,
+    "model_n_params": 30697345596,
+    "n_batch": 128,
+    "n_ubatch": 128,
+    "n_threads": 8,
+    "cpu_mask": "0x0",
+    "cpu_strict": false,
+    "poll": 50,
+    "type_k": "f16",
+    "type_v": "f16",
+    "n_gpu_layers": 61,
+    "n_cpu_moe": 0,
+    "split_mode": "layer",
+    "main_gpu": 0,
+    "no_kv_offload": false,
+    "flash_attn": 1,
+    "devices": "auto",
+    "tensor_split": "0.00",
+    "tensor_buft_overrides": "^blk[.][0-9]+[.](attn_(k|v|q|output)|ffn_(down|gate|up))[.]weight$=CUDA_Hybrid",
+    "use_mmap": true,
+    "use_direct_io": false,
+    "embeddings": false,
+    "no_op_offload": 0,
+    "no_host": false,
+    "fit_target": 0,
+    "fit_min_ctx": 0,
+    "n_ctx": 4096,
+    "n_prompt": 4088,
+    "n_gen": 8,
+    "n_depth": 0,
+    "test_time": "2026-08-12T10:26:10Z",
+    "avg_ns": 1944211971,
+    "stddev_ns": 0,
+    "avg_ts": 2106.766166,
+    "stddev_ts": 0.000000,
+    "samples_ns": [ 1944211971 ],
+    "samples_ts": [ 2106.77 ]
+  }
+]
+q8_ctxfrontier,end,ctx=4096,pages=701,rc=0
+q8_ctxfrontier,start,ctx=4096,pages=740
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 32109 MiB):
+  Device 0: NVIDIA GeForce RTX 5090, compute capability 12.0, VMM: yes, VRAM: 32109 MiB
+hybrid_vmm,mode=staging,selection=global_budget,requested_pages=740,requested_bytes=1551892480,requested_mib=1480.000,gross_pages=740,gross_bytes=1551892480,gross_mib=1480.000,staging_bytes=54525952,staging_mib=52.000,net_bytes=1497366528,net_mib=1428.000,eligible_pages=14428,selected_tensors=410,layers=60,buffer_bytes=31117259520,local_physical_bytes=29565648896,page_bytes=2097152,buffer_mib=29675.731,remote_mib=1480.000,local_physical_mib=28196.000,net_saved_mib=1428.000,page_mib=2.000
+logit_checksum,prompt,59ba2d5c26151ca8,nonfinite=0
+[
+  {
+    "build_commit": "b820cc8",
+    "build_number": 1,
+    "cpu_info": "Intel(R) Core(TM) Ultra 5 230F",
+    "gpu_info": "NVIDIA GeForce RTX 5090",
+    "backends": "CUDA",
+    "model_filename": "/home/wici/gemma-4-31B-it-Q8_0.gguf",
+    "model_type": "gemma4 31B Q8_0",
+    "model_size": 32619841776,
+    "model_n_params": 30697345596,
+    "n_batch": 128,
+    "n_ubatch": 128,
+    "n_threads": 8,
+    "cpu_mask": "0x0",
+    "cpu_strict": false,
+    "poll": 50,
+    "type_k": "f16",
+    "type_v": "f16",
+    "n_gpu_layers": 61,
+    "n_cpu_moe": 0,
+    "split_mode": "layer",
+    "main_gpu": 0,
+    "no_kv_offload": false,
+    "flash_attn": 1,
+    "devices": "auto",
+    "tensor_split": "0.00",
+    "tensor_buft_overrides": "^blk[.][0-9]+[.](attn_(k|v|q|output)|ffn_(down|gate|up))[.]weight$=CUDA_Hybrid",
+    "use_mmap": true,
+    "use_direct_io": false,
+    "embeddings": false,
+    "no_op_offload": 0,
+    "no_host": false,
+    "fit_target": 0,
+    "fit_min_ctx": 0,
+    "n_ctx": 4096,
+    "n_prompt": 4088,
+    "n_gen": 8,
+    "n_depth": 0,
+    "test_time": "2026-08-12T10:26:48Z",
+    "avg_ns": 1930728804,
+    "stddev_ns": 0,
+    "avg_ts": 2121.478683,
+    "stddev_ts": 0.000000,
+    "samples_ns": [ 1930728804 ],
+    "samples_ts": [ 2121.48 ]
+  }logit_checksum,decode,12747e2469c17d3f,nonfinite=0
+
+]
+q8_ctxfrontier,end,ctx=4096,pages=740,rc=0
+q8_ctxfrontier,start,ctx=4096,pages=759
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 32109 MiB):
+  Device 0: NVIDIA GeForce RTX 5090, compute capability 12.0, VMM: yes, VRAM: 32109 MiB
+q8_ctxfrontier,start,ctx=4096,pages=662
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 32109 MiB):
+  Device 0: NVIDIA GeForce RTX 5090, compute capability 12.0, VMM: yes, VRAM: 32109 MiB
+hybrid_vmm,mode=staging,selection=global_budget,requested_pages=662,requested_bytes=1388314624,requested_mib=1324.000,gross_pages=662,gross_bytes=1388314624,gross_mib=1324.000,staging_bytes=50331648,staging_mib=48.000,net_bytes=1337982976,net_mib=1276.000,eligible_pages=14428,selected_tensors=410,layers=60,buffer_bytes=31117259520,local_physical_bytes=29729226752,page_bytes=2097152,buffer_mib=29675.731,remote_mib=1324.000,local_physical_mib=28352.000,net_saved_mib=1276.000,page_mib=2.000
+logit_checksum,prompt,59ba2d5c26151ca8,nonfinite=0
+logit_checksum,decode,12747e2469c17d3f,nonfinite=0
+[
+  {
+    "build_commit": "b820cc8",
+    "build_number": 1,
+    "cpu_info": "Intel(R) Core(TM) Ultra 5 230F",
+    "gpu_info": "NVIDIA GeForce RTX 5090",
+    "backends": "CUDA",
+    "model_filename": "/home/wici/gemma-4-31B-it-Q8_0.gguf",
+    "model_type": "gemma4 31B Q8_0",
+    "model_size": 32619841776,
+    "model_n_params": 30697345596,
+    "n_batch": 128,
+    "n_ubatch": 128,
+    "n_threads": 8,
+    "cpu_mask": "0x0",
+    "cpu_strict": false,
+    "poll": 50,
+    "type_k": "f16",
+    "type_v": "f16",
+    "n_gpu_layers": 61,
+    "n_cpu_moe": 0,
+    "split_mode": "layer",
+    "main_gpu": 0,
+    "no_kv_offload": false,
+    "flash_attn": 1,
+    "devices": "auto",
+    "tensor_split": "0.00",
+    "tensor_buft_overrides": "^blk[.][0-9]+[.](attn_(k|v|q|output)|ffn_(down|gate|up))[.]weight$=CUDA_Hybrid",
+    "use_mmap": true,
+    "use_direct_io": false,
+    "embeddings": false,
+    "no_op_offload": 0,
+    "no_host": false,
+    "fit_target": 0,
+    "fit_min_ctx": 0,
+    "n_ctx": 4096,
+    "n_prompt": 4088,
+    "n_gen": 8,
+    "n_depth": 0,
+    "test_time": "2026-08-12T10:28:13Z",
+    "avg_ns": 1741167583,
+    "stddev_ns": 0,
+    "avg_ts": 2352.444440,
+    "stddev_ts": 0.000000,
+    "samples_ns": [ 1741167583 ],
+    "samples_ts": [ 2352.44 ]
+  }
+]
+q8_ctxfrontier,end,ctx=4096,pages=662,rc=0
+q8_ctxfrontier,start,ctx=4096,pages=642
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 32109 MiB):
+  Device 0: NVIDIA GeForce RTX 5090, compute capability 12.0, VMM: yes, VRAM: 32109 MiB
+hybrid_vmm,mode=staging,selection=global_budget,requested_pages=642,requested_bytes=1346371584,requested_mib=1284.000,gross_pages=642,gross_bytes=1346371584,gross_mib=1284.000,staging_bytes=46137344,staging_mib=44.000,net_bytes=1300234240,net_mib=1240.000,eligible_pages=14428,selected_tensors=410,layers=60,buffer_bytes=31117259520,local_physical_bytes=29771169792,page_bytes=2097152,buffer_mib=29675.731,remote_mib=1284.000,local_physical_mib=28392.000,net_saved_mib=1240.000,page_mib=2.000
+logit_checksum,prompt,59ba2d5c26151ca8,nonfinite=0
+[
+  {
+    "build_commit": "b820cc8",
+    "build_number": 1,
+    "cpu_info": "Intel(R) Core(TM) Ultra 5 230F",
+    "gpu_info": "NVIDIA GeForce RTX 5090",
+    "backends": "CUDA",
+    "model_filename": "/home/wici/gemma-4-31B-it-Q8_0.gguf",
+    "model_type": "gemma4 31B Q8_0",
+    "model_size": 32619841776,
+    "model_n_params": 30697345596,
+    "n_batch": 128,
+    "n_ubatch": 128,
+    "n_threads": 8,
+    "cpu_mask": "0x0",
+    "cpu_strict": false,
+    "poll": 50,
+    "type_k": "f16",
+    "type_v": "f16",
+    "n_gpu_layers": 61,
+    "n_cpu_moe": 0,
+    "split_mode": "layer",
+    "main_gpu": 0,
+    "no_kv_offload": false,
+    "flash_attn": 1,
+    "devices": "auto",
+    "tensor_split": "0.00",
+    "tensor_buft_overrides": "^blk[.][0-9]+[.](attn_(k|v|q|output)|ffn_(down|gate|up))[.]weight$=CUDA_Hybrid",
+    "use_mmap": true,
+    "use_direct_io": false,
+    "embeddings": false,
+    "no_op_offload": 0,
+    "no_host": false,
+    "fit_target": 0,
+    "fit_min_ctx": 0,
+    "n_ctx": 4096,
+    "n_prompt": 4088,
+    "n_gen": 8,
+    "n_depth": 0,
+    "test_time": "2026-08-12T10:29:00Z",
+    "avg_ns": 1903465161,
+    "stddev_ns": 0,
+    "avg_ts": 2151.864969,
+    "stddev_ts": 0.000000,
+    "samples_ns": [ 1903465161 ],
+    "samples_ts": [ 2151.86 ]
+  }logit_checksum,decode,12747e2469c17d3f,nonfinite=0
+
+]
+q8_ctxfrontier,end,ctx=4096,pages=642,rc=0
+q8_ctxfrontier,start,ctx=4096,pages=632
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 32109 MiB):
+  Device 0: NVIDIA GeForce RTX 5090, compute capability 12.0, VMM: yes, VRAM: 32109 MiB
+hybrid_vmm,mode=staging,selection=global_budget,requested_pages=632,requested_bytes=1325400064,requested_mib=1264.000,gross_pages=632,gross_bytes=1325400064,gross_mib=1264.000,staging_bytes=46137344,staging_mib=44.000,net_bytes=1279262720,net_mib=1220.000,eligible_pages=14428,selected_tensors=410,layers=60,buffer_bytes=31117259520,local_physical_bytes=29792141312,page_bytes=2097152,buffer_mib=29675.731,remote_mib=1264.000,local_physical_mib=28412.000,net_saved_mib=1220.000,page_mib=2.000
+logit_checksum,prompt,59ba2d5c26151ca8,nonfinite=0
+logit_checksum,decode,12747e2469c17d3f,nonfinite=0
+[
+  {
+    "build_commit": "b820cc8",
+    "build_number": 1,
+    "cpu_info": "Intel(R) Core(TM) Ultra 5 230F",
+    "gpu_info": "NVIDIA GeForce RTX 5090",
+    "backends": "CUDA",
+    "model_filename": "/home/wici/gemma-4-31B-it-Q8_0.gguf",
+    "model_type": "gemma4 31B Q8_0",
+    "model_size": 32619841776,
+    "model_n_params": 30697345596,
+    "n_batch": 128,
+    "n_ubatch": 128,
+    "n_threads": 8,
+    "cpu_mask": "0x0",
+    "cpu_strict": false,
+    "poll": 50,
+    "type_k": "f16",
+    "type_v": "f16",
+    "n_gpu_layers": 61,
+    "n_cpu_moe": 0,
+    "split_mode": "layer",
+    "main_gpu": 0,
+    "no_kv_offload": false,
+    "flash_attn": 1,
+    "devices": "auto",
+    "tensor_split": "0.00",
+    "tensor_buft_overrides": "^blk[.][0-9]+[.](attn_(k|v|q|output)|ffn_(down|gate|up))[.]weight$=CUDA_Hybrid",
+    "use_mmap": true,
+    "use_direct_io": false,
+    "embeddings": false,
+    "no_op_offload": 0,
+    "no_host": false,
+    "fit_target": 0,
+    "fit_min_ctx": 0,
+    "n_ctx": 4096,
+    "n_prompt": 4088,
+    "n_gen": 8,
+    "n_depth": 0,
+    "test_time": "2026-08-12T10:30:00Z",
+    "avg_ns": 2006000113,
+    "stddev_ns": 0,
+    "avg_ts": 2041.874262,
+    "stddev_ts": 0.000000,
+    "samples_ns": [ 2006000113 ],
+    "samples_ts": [ 2041.87 ]
+  }
+]
+q8_ctxfrontier,end,ctx=4096,pages=632,rc=0
+q8_ctxfrontier,start,ctx=4096,pages=500
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 32109 MiB):
+  Device 0: NVIDIA GeForce RTX 5090, compute capability 12.0, VMM: yes, VRAM: 32109 MiB
+hybrid_vmm,mode=staging,selection=global_budget,requested_pages=500,requested_bytes=1048576000,requested_mib=1000.000,gross_pages=500,gross_bytes=1048576000,gross_mib=1000.000,staging_bytes=37748736,staging_mib=36.000,net_bytes=1010827264,net_mib=964.000,eligible_pages=14428,selected_tensors=410,layers=60,buffer_bytes=31117259520,local_physical_bytes=30068965376,page_bytes=2097152,buffer_mib=29675.731,remote_mib=1000.000,local_physical_mib=28676.000,net_saved_mib=964.000,page_mib=2.000
+llama_bench: error: failed to create context with model '/home/wici/gemma-4-31B-it-Q8_0.gguf'
+[
+q8_ctxfrontier,end,ctx=4096,pages=500,rc=1
+q8_ctxfrontier,start,ctx=4096,pages=566,low=500,high=632
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 32109 MiB):
+  Device 0: NVIDIA GeForce RTX 5090, compute capability 12.0, VMM: yes, VRAM: 32109 MiB
+hybrid_vmm,mode=staging,selection=global_budget,requested_pages=566,requested_bytes=1186988032,requested_mib=1132.000,gross_pages=566,gross_bytes=1186988032,gross_mib=1132.000,staging_bytes=41943040,staging_mib=40.000,net_bytes=1145044992,net_mib=1092.000,eligible_pages=14428,selected_tensors=410,layers=60,buffer_bytes=31117259520,local_physical_bytes=29930553344,page_bytes=2097152,buffer_mib=29675.731,remote_mib=1132.000,local_physical_mib=28544.000,net_saved_mib=1092.000,page_mib=2.000
+logit_checksum,prompt,59ba2d5c26151ca8,nonfinite=0
+logit_checksum,decode,12747e2469c17d3f,nonfinite=0
+[
+  {
+    "build_commit": "b820cc8",
+    "build_number": 1,
+    "cpu_info": "Intel(R) Core(TM) Ultra 5 230F",
+    "gpu_info": "NVIDIA GeForce RTX 5090",
+    "backends": "CUDA",
+    "model_filename": "/home/wici/gemma-4-31B-it-Q8_0.gguf",
+    "model_type": "gemma4 31B Q8_0",
+    "model_size": 32619841776,
+    "model_n_params": 30697345596,
+    "n_batch": 128,
+    "n_ubatch": 128,
+    "n_threads": 8,
+    "cpu_mask": "0x0",
+    "cpu_strict": false,
+    "poll": 50,
+    "type_k": "f16",
+    "type_v": "f16",
+    "n_gpu_layers": 61,
+    "n_cpu_moe": 0,
+    "split_mode": "layer",
+    "main_gpu": 0,
+    "no_kv_offload": false,
+    "flash_attn": 1,
+    "devices": "auto",
+    "tensor_split": "0.00",
+    "tensor_buft_overrides": "^blk[.][0-9]+[.](attn_(k|v|q|output)|ffn_(down|gate|up))[.]weight$=CUDA_Hybrid",
+    "use_mmap": true,
+    "use_direct_io": false,
+    "embeddings": false,
+    "no_op_offload": 0,
+    "no_host": false,
+    "fit_target": 0,
+    "fit_min_ctx": 0,
+    "n_ctx": 4096,
+    "n_prompt": 4088,
+    "n_gen": 8,
+    "n_depth": 0,
+    "test_time": "2026-08-12T10:32:40Z",
+    "avg_ns": 1734436830,
+    "stddev_ns": 0,
+    "avg_ts": 2361.573468,
+    "stddev_ts": 0.000000,
+    "samples_ns": [ 1734436830 ],
+    "samples_ts": [ 2361.57 ]
+  }
+]
+q8_ctxfrontier,end,ctx=4096,pages=566,rc=0
+q8_ctxfrontier,start,ctx=4096,pages=533,low=500,high=566
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 32109 MiB):
+  Device 0: NVIDIA GeForce RTX 5090, compute capability 12.0, VMM: yes, VRAM: 32109 MiB
+hybrid_vmm,mode=staging,selection=global_budget,requested_pages=533,requested_bytes=1117782016,requested_mib=1066.000,gross_pages=533,gross_bytes=1117782016,gross_mib=1066.000,staging_bytes=41943040,staging_mib=40.000,net_bytes=1075838976,net_mib=1026.000,eligible_pages=14428,selected_tensors=410,layers=60,buffer_bytes=31117259520,local_physical_bytes=29999759360,page_bytes=2097152,buffer_mib=29675.731,remote_mib=1066.000,local_physical_mib=28610.000,net_saved_mib=1026.000,page_mib=2.000
+[
+/run/user/1000/intertidal-nvcc/tmpxft_00296681_00000000-1_stdin:107: CUDA error
+[New LWP 3953208]
+[New LWP 3953207]
+[New LWP 3953186]
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/lib/x86_64-linux-gnu/libthread_db.so.1".
+0x00007325e3110913 in __GI___wait4 (pid=3955024, stat_loc=0x0, options=0, usage=0x0) at ../sysdeps/unix/sysv/linux/wait4.c:30
+#0  0x00007325e3110913 in __GI___wait4 (pid=3955024, stat_loc=0x0, options=0, usage=0x0) at ../sysdeps/unix/sysv/linux/wait4.c:30
+30	in ../sysdeps/unix/sysv/linux/wait4.c
+#1  0x00007325e334e663 in ggml_print_backtrace () from /home/wici/llama.cpp/build-cuda/bin/libggml-base.so.0
+warning: 30	../sysdeps/unix/sysv/linux/wait4.c: No such file or directory
+#2  0x00007325e334e80b in ggml_abort () from /home/wici/llama.cpp/build-cuda/bin/libggml-base.so.0
+#3  0x00007325de5c82e7 in ggml_cuda_error(char const*, char const*, char const*, int, char const*) () from /dev/shm/intertidal-capacity.mEP47j/libggml-cuda.so.0
+#4  0x00007325de5ea700 in ggml_cuda_pool_vmm::alloc(unsigned long, unsigned long*) () from /dev/shm/intertidal-capacity.mEP47j/libggml-cuda.so.0
+#5  0x00007325decf356e in void launch_mul_mat_q<(ggml_type)8, 128>(ggml_backend_cuda_context&, mmq_args const&, CUstream_st*) () from /dev/shm/intertidal-capacity.mEP47j/libggml-cuda.so.0
+#6  0x00007325de607f82 in ggml_cuda_mul_mat_q(ggml_backend_cuda_context&, ggml_tensor const*, ggml_tensor const*, ggml_tensor const*, ggml_tensor*) () from /dev/shm/intertidal-capacity.mEP47j/libggml-cuda.so.0
+#7  0x00007325de5e8400 in ggml_backend_cuda_graph_compute(ggml_backend*, ggml_cgraph*) () from /dev/shm/intertidal-capacity.mEP47j/libggml-cuda.so.0
+#8  0x00007325e336bf57 in ggml_backend_sched_graph_compute_async () from /home/wici/llama.cpp/build-cuda/bin/libggml-base.so.0
+#9  0x00007325e26ea771 in llama_context::graph_compute(ggml_cgraph*, bool) () from /home/wici/llama.cpp/build-cuda/bin/libllama.so.0
+#10 0x00007325e26ee8ba in llama_context::process_ubatch(llama_ubatch const&, llm_graph_type, llama_memory_context_i*, ggml_status&) () from /home/wici/llama.cpp/build-cuda/bin/libllama.so.0
+#11 0x00007325e26f5360 in llama_context::decode(llama_batch const&) () from /home/wici/llama.cpp/build-cuda/bin/libllama.so.0
+#12 0x00007325e26f6fef in llama_decode () from /home/wici/llama.cpp/build-cuda/bin/libllama.so.0
+#13 0x00007325e37003d1 in test_prompt(llama_context*, int, int, int) () from /dev/shm/intertidal-capacity.mEP47j/libllama-bench-impl.so
+#14 0x00007325e370f9c9 in llama_bench(int, char**) () from /dev/shm/intertidal-capacity.mEP47j/libllama-bench-impl.so
+#15 0x00007325e302a1ca in __libc_start_call_main (main=main@entry=0x56d2b206f270 <main>, argc=argc@entry=36, argv=argv@entry=0x7fffed7a36e8) at ../sysdeps/nptl/libc_start_call_main.h:58
+#16 0x00007325e302a28b in __libc_start_main_impl (main=0x56d2b206f270 <main>, argc=36, argv=0x7fffed7a36e8, init=<optimized out>, fini=<optimized out>, rtld_fini=<optimized out>, stack_end=0x7fffed7a36d8) at ../csu/libc-start.c:360
+#17 0x000056d2b206f2a5 in _start ()
+[Inferior 1 (process 3953150) detached]
+warning: 58	../sysdeps/nptl/libc_start_call_main.h: No such file or directory
+warning: 360	../csu/libc-start.c: No such file or directory
+timeout: the monitored command dumped core
+bash: line 17: 3953149 Aborted                 GGML_CUDA_HYBRID_PAGE_BUDGET=$pages timeout --signal=TERM --kill-after=30s 1800s /home/wici/llama.cpp/build-cuda/bin/llama-bench -m /home/wici/gemma-4-31B-it-Q8_0.gguf -ngl 61 -nkvo 0 -ot '^blk[.][0-9]+[.](attn_(k|v|q|output)|ffn_(down|gate|up))[.]weight$=CUDA_Hybrid' --ctx-size 4096 -p 0 -n 0 -pg 4088,8 -d 0 -b 128 -ub 128 -t 8 -fa on -ctk f16 -ctv f16 -r 1 --no-warmup -o json
+q8_ctxfrontier,end,ctx=4096,pages=533,rc=134
+q8_ctxfrontier,start,ctx=4096,pages=549,low=533,high=566
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 32109 MiB):
+  Device 0: NVIDIA GeForce RTX 5090, compute capability 12.0, VMM: yes, VRAM: 32109 MiB
+hybrid_vmm,mode=staging,selection=global_budget,requested_pages=549,requested_bytes=1151336448,requested_mib=1098.000,gross_pages=549,gross_bytes=1151336448,gross_mib=1098.000,staging_bytes=41943040,staging_mib=40.000,net_bytes=1109393408,net_mib=1058.000,eligible_pages=14428,selected_tensors=410,layers=60,buffer_bytes=31117259520,local_physical_bytes=29966204928,page_bytes=2097152,buffer_mib=29675.731,remote_mib=1098.000,local_physical_mib=28578.000,net_saved_mib=1058.000,page_mib=2.000
+logit_checksum,prompt,59ba2d5c26151ca8,nonfinite=0
+[
+  {
+    "build_commit": "b820cc8",
+    "build_number": 1,
+    "cpu_info": "Intel(R) Core(TM) Ultra 5 230F",
+    "gpu_info": "NVIDIA GeForce RTX 5090",
+    "backends": "CUDA",
+    "model_filename": "/home/wici/gemma-4-31B-it-Q8_0.gguf",
+    "model_type": "gemma4 31B Q8_0",
+    "model_size": 32619841776,
+    "model_n_params": 30697345596,
+    "n_batch": 128,
+    "n_ubatch": 128,
+    "n_threads": 8,
+    "cpu_mask": "0x0",
+    "cpu_strict": false,
+    "poll": 50,
+    "type_k": "f16",
+    "type_v": "f16",
+    "n_gpu_layers": 61,
+    "n_cpu_moe": 0,
+    "split_mode": "layer",
+    "main_gpu": 0,
+    "no_kv_offload": false,
+    "flash_attn": 1,
+    "devices": "auto",
+    "tensor_split": "0.00",
+    "tensor_buft_overrides": "^blk[.][0-9]+[.](attn_(k|v|q|output)|ffn_(down|gate|up))[.]weight$=CUDA_Hybrid",
+    "use_mmap": true,
+    "use_direct_io": false,
+    "embeddings": false,
+    "no_op_offload": 0,
+    "no_host": false,
+    "fit_target": 0,
+    "fit_min_ctx": 0,
+    "n_ctx": 4096,
+    "n_prompt": 4088,
+    "n_gen": 8,
+    "n_depth": 0,
+    "test_time": "2026-08-12T10:33:36Z",
+    "avg_ns": 1781966776,
+    "stddev_ns": 0,
+    "avg_ts": 2298.583821,
+    "stddev_ts": 0.000000,
+    "samples_ns": [ 1781966776 ],
+    "samples_ts": [ 2298.58 ]
+  }logit_checksum,decode,12747e2469c17d3f,nonfinite=0
+
+]
+q8_ctxfrontier,end,ctx=4096,pages=549,rc=0
+q8_ctxfrontier,start,ctx=4096,pages=541,low=533,high=549
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 32109 MiB):
+  Device 0: NVIDIA GeForce RTX 5090, compute capability 12.0, VMM: yes, VRAM: 32109 MiB
+hybrid_vmm,mode=staging,selection=global_budget,requested_pages=541,requested_bytes=1134559232,requested_mib=1082.000,gross_pages=541,gross_bytes=1134559232,gross_mib=1082.000,staging_bytes=41943040,staging_mib=40.000,net_bytes=1092616192,net_mib=1042.000,eligible_pages=14428,selected_tensors=410,layers=60,buffer_bytes=31117259520,local_physical_bytes=29982982144,page_bytes=2097152,buffer_mib=29675.731,remote_mib=1082.000,local_physical_mib=28594.000,net_saved_mib=1042.000,page_mib=2.000
+[
+/run/user/1000/intertidal-nvcc/tmpxft_00296681_00000000-1_stdin:107: CUDA error
+[New LWP 3956893]
+[New LWP 3956892]
+[New LWP 3956874]
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/lib/x86_64-linux-gnu/libthread_db.so.1".
+0x00007a83f8310913 in __GI___wait4 (pid=3958363, stat_loc=0x0, options=0, usage=0x0) at ../sysdeps/unix/sysv/linux/wait4.c:30
+#0  0x00007a83f8310913 in __GI___wait4 (pid=3958363, stat_loc=0x0, options=0, usage=0x0) at ../sysdeps/unix/sysv/linux/wait4.c:30
+30	in ../sysdeps/unix/sysv/linux/wait4.c
+#1  0x00007a83f88d8663 in ggml_print_backtrace () from /home/wici/llama.cpp/build-cuda/bin/libggml-base.so.0
+#2  0x00007a83f88d880b in ggml_abort () from /home/wici/llama.cpp/build-cuda/bin/libggml-base.so.0
+#3  0x00007a83f37c82e7 in ggml_cuda_error(char const*, char const*, char const*, int, char const*) () from /dev/shm/intertidal-capacity.mEP47j/libggml-cuda.so.0
+#4  0x00007a83f37ea700 in ggml_cuda_pool_vmm::alloc(unsigned long, unsigned long*) () from /dev/shm/intertidal-capacity.mEP47j/libggml-cuda.so.0
+#5  0x00007a83f3be55f9 in void launch_fattn<256, 32, 2>(ggml_backend_cuda_context&, ggml_tensor*, void (*)(char const*, char const*, char const*, char const*, char const*, int const*, float*, float2*, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long), int, unsigned long, int, bool, bool, bool, int) () from /dev/shm/intertidal-capacity.mEP47j/libggml-cuda.so.0
+#6  0x00007a83f3be713b in void ggml_cuda_flash_attn_ext_mma_f16_case<256, 256, 32, 2>(ggml_backend_cuda_context&, ggml_tensor*) () from /dev/shm/intertidal-capacity.mEP47j/libggml-cuda.so.0
+#7  0x00007a83f37e8561 in ggml_backend_cuda_graph_compute(ggml_backend*, ggml_cgraph*) () from /dev/shm/intertidal-capacity.mEP47j/libggml-cuda.so.0
+#8  0x00007a83f88f5f57 in ggml_backend_sched_graph_compute_async ()warning: 30	../sysdeps/unix/sysv/linux/wait4.c: No such file or directory
+ from /home/wici/llama.cpp/build-cuda/bin/libggml-base.so.0
+#9  0x00007a83f78ea771 in llama_context::graph_compute(ggml_cgraph*, bool) () from /home/wici/llama.cpp/build-cuda/bin/libllama.so.0
+#10 0x00007a83f78ee8ba in llama_context::process_ubatch(llama_ubatch const&, llm_graph_type, llama_memory_context_i*, ggml_status&) () from /home/wici/llama.cpp/build-cuda/bin/libllama.so.0
+#11 0x00007a83f78f5360 in llama_context::decode(llama_batch const&) () from /home/wici/llama.cpp/build-cuda/bin/libllama.so.0
+#12 0x00007a83f78f6fef in llama_decode () from /home/wici/llama.cpp/build-cuda/bin/libllama.so.0
+#13 0x00007a83f89fb3d1 in test_prompt(llama_context*, int, int, int) () from /dev/shm/intertidal-capacity.mEP47j/libllama-bench-impl.so
+#14 0x00007a83f8a0a9c9 in llama_bench(int, char**) () from /dev/shm/intertidal-capacity.mEP47j/libllama-bench-impl.so
+#15 0x00007a83f822a1ca in __libc_start_call_main (main=main@entry=0x59686ec3b270 <main>, argc=argc@entry=36, argv=argv@entry=0x7ffeccc6d878) at ../sysdeps/nptl/libc_start_call_main.h:58
+#16 0x00007a83f822a28b in __libc_start_main_impl (main=0x59686ec3b270 <main>, argc=36, argv=0x7ffeccc6d878, init=<optimized out>, fini=<optimized out>, rtld_fini=<optimized out>, stack_end=0x7ffeccc6d868) at ../csu/libc-start.c:360
+#17 0x000059686ec3b2a5 in _start ()
+[Inferior 1 (process 3956839) detached]
+warning: 58	../sysdeps/nptl/libc_start_call_main.h: No such file or directory
+warning: 360	../csu/libc-start.c: No such file or directory
+q8_ctxfrontier,end,ctx=4096,pages=541,rc=134
+q8_ctxfrontier,start,ctx=4096,pages=545,low=541,high=549
+timeout: the monitored command dumped core
+bash: line 17: 3956838 Aborted                 GGML_CUDA_HYBRID_PAGE_BUDGET=$pages timeout --signal=TERM --kill-after=30s 1800s /home/wici/llama.cpp/build-cuda/bin/llama-bench -m /home/wici/gemma-4-31B-it-Q8_0.gguf -ngl 61 -nkvo 0 -ot '^blk[.][0-9]+[.](attn_(k|v|q|output)|ffn_(down|gate|up))[.]weight$=CUDA_Hybrid' --ctx-size 4096 -p 0 -n 0 -pg 4088,8 -d 0 -b 128 -ub 128 -t 8 -fa on -ctk f16 -ctv f16 -r 1 --no-warmup -o json
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 32109 MiB):
+  Device 0: NVIDIA GeForce RTX 5090, compute capability 12.0, VMM: yes, VRAM: 32109 MiB
+hybrid_vmm,mode=staging,selection=global_budget,requested_pages=545,requested_bytes=1142947840,requested_mib=1090.000,gross_pages=545,gross_bytes=1142947840,gross_mib=1090.000,staging_bytes=41943040,staging_mib=40.000,net_bytes=1101004800,net_mib=1050.000,eligible_pages=14428,selected_tensors=410,layers=60,buffer_bytes=31117259520,local_physical_bytes=29974593536,page_bytes=2097152,buffer_mib=29675.731,remote_mib=1090.000,local_physical_mib=28586.000,net_saved_mib=1050.000,page_mib=2.000
+[
+logit_checksum,prompt,59ba2d5c26151ca8,nonfinite=0
+/run/user/1000/intertidal-nvcc/tmpxft_00296681_00000000-1_stdin:107: CUDA error
+[New LWP 3958556]
+[New LWP 3958555]
+[New LWP 3958533]
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/lib/x86_64-linux-gnu/libthread_db.so.1".
+0x0000770d10b10913 in __GI___wait4 (pid=3959933, stat_loc=0x0, options=0, usage=0x0) at ../sysdeps/unix/sysv/linux/wait4.c:30
+#0  0x0000770d10b10913 in __GI___wait4 (pid=3959933, stat_loc=0x0, options=0, usage=0x0) at ../sysdeps/unix/sysv/linux/wait4.c:30
+30	in ../sysdeps/unix/sysv/linux/wait4.c
+#1  0x0000770d10d4e663 in ggml_print_backtrace () from /home/wici/llama.cpp/build-cuda/bin/libggml-base.so.0
+#2  0x0000770d10d4e80b in ggml_abort () from /home/wici/llama.cpp/build-cuda/bin/libggml-base.so.0
+#3  0x0000770d0bfc82e7 in ggml_cuda_error(char const*, char const*, char const*, int, char const*) () from /dev/shm/intertidal-capacity.mEP47j/libggml-cuda.so.0
+#4  0x0000770d0c0dc711 in ggml_cuda_kernel_can_use_pdl(void const*) () from /dev/shm/intertidal-capacity.mEP47j/libggml-cuda.so.0
+#5  0x0000770d0c0dc83d in void ggml_cuda_kernel_launch<void (*)(void const*, void const*, int const*, ggml_cuda_mm_fusion_args_device, float*, unsigned int, uint3, unsigned int, unsigned int, unsigned int, uint3, unsigned int, unsigned int, unsigned int, uint3, unsigned int, unsigned int, unsigned int, unsigned int), void const*&, void const*&, int const*&, ggml_cuda_mm_fusion_args_device const&, float*&, unsigned int const&, uint3 const&, unsigned int const&, unsigned int const&, unsigned int const&, uint3 const&, unsigned int const&, unsigned int const&, unsigned int const&, uint3 const&, unsigned int const&, unsigned int const&, unsigned int const&, unsigned int const&>(void (*)(void const*, void const*, int const*, ggml_cuda_mm_fusion_args_device, float*, unsigned int, uint3, unsigned int, unsigned int, unsigned int, uint3, unsigned int, unsigned int, unsigned int, uint3, unsigned int, unsigned int, unsigned int, unsigned int), ggml_cuda_kernel_launch_params const&, void const*&, void const*&, int const*&, ggml_cuda_mm_fusion_args_device const&, float*&, unsigned int const&, uint3 const&, unsigned int const&, unsigned int const&, unsigned int const&, uint3 const&, unsigned int const&, unsigned int const&, unsigned int const&, uint3 const&, unsigned int const&, unsigned int const&, unsigned int const&, unsigned int const&) () from /dev/shm/intertidal-capacity.mEP47j/libggml-cuda.so.0
+#6  0x0000770d0c10daf7 in void mul_mat_vec_q_switch_ncols_dst<(ggml_type)8>(void const*, void const*, int const*, ggml_cuda_mm_fusion_args_device, float*, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, CUstream_st*) () from /dev/shm/intertidal-capacity.mEP47j/libggml-cuda.so.0
+#7  0x0000770d0c120ee0 in ggml_cuda_mul_mat_vec_q(ggml_backend_cuda_context&, ggml_tensor const*, ggml_tensor const*, ggml_tensor const*, ggml_tensor*, ggml_cuda_mm_fusion_args_host const*) () from /dev/shm/intertidal-capacity.mEP47j/libggml-cuda.so.0
+#8  0x0000770d0bfd178f in ggml_cuda_try_fuse(ggml_backend_cuda_context*, ggml_cgraph*, int) () from /dev/shm/intertidal-capacity.mEP47j/libggml-cuda.so.0
+#9  0x0000770d0bfe7438 in ggml_backend_cuda_graph_compute(ggml_backend*, ggml_cgraph*) () from /dev/shm/intertidal-capacity.mEP47j/libggml-cuda.so.0
+#10 0x0000770d10d6bf57 in ggml_backend_sched_graph_compute_async () from /home/wici/llama.cpp/build-cuda/bin/libggml-base.so.0
+#11 0x0000770d100ea771 in llama_context::graph_compute(ggml_cgraph*, bool) () from /home/wici/llama.cpp/build-cuda/bin/libllama.so.0
+#12 0x0000770d100ee8ba in llama_context::process_ubatch(llama_ubatch const&, llm_graph_type, llama_memory_context_i*, ggml_status&) () from /home/wici/llama.cpp/build-cuda/bin/libllama.so.0
+#13 0x0000770d100f5360 in llama_context::decode(llama_batch const&) () from /home/wici/llama.cpp/build-cuda/bin/libllama.so.0
+#14 0x0000770d100f6fef in llama_decode () from /home/wici/llama.cpp/build-cuda/bin/libllama.so.0
+#15 0x0000770d111bfb19 in llama_bench(int, char**) () from /dev/shm/intertidal-capacity.mEP47j/libllama-bench-impl.so
+#16 0x0000770d10a2a1ca in __libc_start_call_main (main=main@entry=0x5e2b016f2270 <main>, argc=argc@entry=36, argv=argv@entry=0x7ffd2789bd88) at ../sysdeps/nptl/libc_start_call_main.h:58
+#17 0x0000770d10a2a28b in __libc_start_main_impl (main=0x5e2b016f2270 <main>, argc=36, argv=0x7ffd2789bd88, init=<optimized out>, fini=<optimized out>, rtld_fini=<optimized out>, stack_end=0x7ffd2789bd78) at ../csu/libc-start.c:360
+#18 0x00005e2b016f22a5 in _start ()
+[Inferior 1 (process 3958502) detached]
+warning: 30	../sysdeps/unix/sysv/linux/wait4.c: No such file or directory
+warning: 58	../sysdeps/nptl/libc_start_call_main.h: No such file or directory
+warning: 360	../csu/libc-start.c: No such file or directory
+q8_ctxfrontier,end,ctx=4096,pages=545,rc=134
+q8_ctxfrontier,start,ctx=4096,pages=547,low=545,high=549
+timeout: the monitored command dumped core
+bash: line 17: 3958501 Aborted                 GGML_CUDA_HYBRID_PAGE_BUDGET=$pages timeout --signal=TERM --kill-after=30s 1800s /home/wici/llama.cpp/build-cuda/bin/llama-bench -m /home/wici/gemma-4-31B-it-Q8_0.gguf -ngl 61 -nkvo 0 -ot '^blk[.][0-9]+[.](attn_(k|v|q|output)|ffn_(down|gate|up))[.]weight$=CUDA_Hybrid' --ctx-size 4096 -p 0 -n 0 -pg 4088,8 -d 0 -b 128 -ub 128 -t 8 -fa on -ctk f16 -ctv f16 -r 1 --no-warmup -o json
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 32109 MiB):
+  Device 0: NVIDIA GeForce RTX 5090, compute capability 12.0, VMM: yes, VRAM: 32109 MiB
+hybrid_vmm,mode=staging,selection=global_budget,requested_pages=547,requested_bytes=1147142144,requested_mib=1094.000,gross_pages=547,gross_bytes=1147142144,gross_mib=1094.000,staging_bytes=41943040,staging_mib=40.000,net_bytes=1105199104,net_mib=1054.000,eligible_pages=14428,selected_tensors=410,layers=60,buffer_bytes=31117259520,local_physical_bytes=29970399232,page_bytes=2097152,buffer_mib=29675.731,remote_mib=1094.000,local_physical_mib=28582.000,net_saved_mib=1054.000,page_mib=2.000
+logit_checksum,prompt,59ba2d5c26151ca8,nonfinite=0
+logit_checksum,decode,12747e2469c17d3f,nonfinite=0
+[
+  {
+    "build_commit": "b820cc8",
+    "build_number": 1,
+    "cpu_info": "Intel(R) Core(TM) Ultra 5 230F",
+    "gpu_info": "NVIDIA GeForce RTX 5090",
+    "backends": "CUDA",
+    "model_filename": "/home/wici/gemma-4-31B-it-Q8_0.gguf",
+    "model_type": "gemma4 31B Q8_0",
+    "model_size": 32619841776,
+    "model_n_params": 30697345596,
+    "n_batch": 128,
+    "n_ubatch": 128,
+    "n_threads": 8,
+    "cpu_mask": "0x0",
+    "cpu_strict": false,
+    "poll": 50,
+    "type_k": "f16",
+    "type_v": "f16",
+    "n_gpu_layers": 61,
+    "n_cpu_moe": 0,
+    "split_mode": "layer",
+    "main_gpu": 0,
+    "no_kv_offload": false,
+    "flash_attn": 1,
+    "devices": "auto",
+    "tensor_split": "0.00",
+    "tensor_buft_overrides": "^blk[.][0-9]+[.](attn_(k|v|q|output)|ffn_(down|gate|up))[.]weight$=CUDA_Hybrid",
+    "use_mmap": true,
+    "use_direct_io": false,
+    "embeddings": false,
+    "no_op_offload": 0,
+    "no_host": false,
+    "fit_target": 0,
+    "fit_min_ctx": 0,
+    "n_ctx": 4096,
+    "n_prompt": 4088,
+    "n_gen": 8,
+    "n_depth": 0,
+    "test_time": "2026-08-12T10:34:57Z",
+    "avg_ns": 1726504575,
+    "stddev_ns": 0,
+    "avg_ts": 2372.423485,
+    "stddev_ts": 0.000000,
+    "samples_ns": [ 1726504575 ],
+    "samples_ts": [ 2372.42 ]
+  }
+]
+q8_ctxfrontier,end,ctx=4096,pages=547,rc=0
+q8_ctxfrontier,start,ctx=4096,pages=546,low=545,high=547
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 32109 MiB):
+  Device 0: NVIDIA GeForce RTX 5090, compute capability 12.0, VMM: yes, VRAM: 32109 MiB
+hybrid_vmm,mode=staging,selection=global_budget,requested_pages=546,requested_bytes=1145044992,requested_mib=1092.000,gross_pages=546,gross_bytes=1145044992,gross_mib=1092.000,staging_bytes=41943040,staging_mib=40.000,net_bytes=1103101952,net_mib=1052.000,eligible_pages=14428,selected_tensors=410,layers=60,buffer_bytes=31117259520,local_physical_bytes=29972496384,page_bytes=2097152,buffer_mib=29675.731,remote_mib=1092.000,local_physical_mib=28584.000,net_saved_mib=1052.000,page_mib=2.000
+[
+  {
+    "build_commit": "b820cc8",
+    "build_number": 1,
+    "cpu_info": "Intel(R) Core(TM) Ultra 5 230F",
+    "gpu_info": "NVIDIA GeForce RTX 5090",
+    "backends": "CUDA",
+    "model_filename": "/home/wici/gemma-4-31B-it-Q8_0.gguf",
+    "model_type": "gemma4 31B Q8_0",
+    "model_size": 32619841776,
+    "model_n_params": 30697345596,
+    "n_batch": 128,
+    "n_ubatch": 128,
+    "n_threads": 8,
+    "cpu_mask": "0x0",
+    "cpu_strict": false,
+    "poll": 50,
+    "type_k": "f16",
+    "type_v": "f16",
+    "n_gpu_layers": 61,
+    "n_cpu_moe": 0,
+    "split_mode": "layer",
+    "main_gpu": 0,
+    "no_kv_offload": false,
+    "flash_attn": 1,
+    "devices": "auto",
+    "tensor_split": "0.00",
+    "tensor_buft_overrides": "^blk[.][0-9]+[.](attn_(k|v|q|output)|ffn_(down|gate|up))[.]weight$=CUDA_Hybrid",
+    "use_mmap": true,
+    "use_direct_io": false,
+    "embeddings": false,
+    "no_op_offload": 0,
+    "no_host": false,
+    "fit_target": 0,
+    "fit_min_ctx": 0,
+    "n_ctx": 4096,
+    "n_prompt": 4088,
+    "n_gen": 8,
+    "n_depth": 0,
+    "test_time": "2026-08-12T10:35:32Z",
+    "avg_ns": 1729132657,
+    "stddev_ns": 0,
+    "avg_ts": 2368.817675,
+    "stddev_ts": 0.000000,
+    "samples_ns": [ 1729132657 ],
+    "samples_ts": [ 2368.82 ]
+  }logit_checksum,prompt,59ba2d5c26151ca8,nonfinite=0
+logit_checksum,decode,12747e2469c17d3f,nonfinite=0
+
+]
+q8_ctxfrontier,end,ctx=4096,pages=546,rc=0
+q8_ctxfrontier,boundary,ctx=4096,last_fail=545,first_success=546

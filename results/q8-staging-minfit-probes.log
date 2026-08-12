@@ -1,0 +1,90 @@
+q8_minfit,start,pp=3.0,pages=467
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 32109 MiB):
+  Device 0: NVIDIA GeForce RTX 5090, compute capability 12.0, VMM: yes, VRAM: 32109 MiB
+hybrid_vmm,mode=staging,selection=global_budget,requested_pages=467,requested_bytes=979369984,requested_mib=934.000,gross_pages=467,gross_bytes=979369984,gross_mib=934.000,staging_bytes=33554432,staging_mib=32.000,net_bytes=945815552,net_mib=902.000,eligible_pages=14428,selected_tensors=410,layers=60,buffer_bytes=31117259520,local_physical_bytes=30138171392,page_bytes=2097152,buffer_mib=29675.731,remote_mib=934.000,local_physical_mib=28742.000,net_saved_mib=902.000,page_mib=2.000
+llama_bench: error: failed to create context with model '/home/wici/gemma-4-31B-it-Q8_0.gguf'
+[
+q8_minfit,end,pp=3.0,pages=467,rc=1
+q8_minfit,start,pp=3.5,pages=545
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 32109 MiB):
+  Device 0: NVIDIA GeForce RTX 5090, compute capability 12.0, VMM: yes, VRAM: 32109 MiB
+hybrid_vmm,mode=staging,selection=global_budget,requested_pages=545,requested_bytes=1142947840,requested_mib=1090.000,gross_pages=545,gross_bytes=1142947840,gross_mib=1090.000,staging_bytes=41943040,staging_mib=40.000,net_bytes=1101004800,net_mib=1050.000,eligible_pages=14428,selected_tensors=410,layers=60,buffer_bytes=31117259520,local_physical_bytes=29974593536,page_bytes=2097152,buffer_mib=29675.731,remote_mib=1090.000,local_physical_mib=28586.000,net_saved_mib=1050.000,page_mib=2.000
+llama_bench: error: failed to create context with model '/home/wici/gemma-4-31B-it-Q8_0.gguf'
+[
+q8_minfit,end,pp=3.5,pages=545,rc=1
+q8_minfit,start,pp=4.0,pages=623
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 32109 MiB):
+  Device 0: NVIDIA GeForce RTX 5090, compute capability 12.0, VMM: yes, VRAM: 32109 MiB
+hybrid_vmm,mode=staging,selection=global_budget,requested_pages=623,requested_bytes=1306525696,requested_mib=1246.000,gross_pages=623,gross_bytes=1306525696,gross_mib=1246.000,staging_bytes=46137344,staging_mib=44.000,net_bytes=1260388352,net_mib=1202.000,eligible_pages=14428,selected_tensors=410,layers=60,buffer_bytes=31117259520,local_physical_bytes=29811015680,page_bytes=2097152,buffer_mib=29675.731,remote_mib=1246.000,local_physical_mib=28430.000,net_saved_mib=1202.000,page_mib=2.000
+llama_bench: error: failed to create context with model '/home/wici/gemma-4-31B-it-Q8_0.gguf'
+[
+q8_minfit,end,pp=4.0,pages=623,rc=1
+q8_minfit,start,pp=4.5,pages=701
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 32109 MiB):
+  Device 0: NVIDIA GeForce RTX 5090, compute capability 12.0, VMM: yes, VRAM: 32109 MiB
+hybrid_vmm,mode=staging,selection=global_budget,requested_pages=701,requested_bytes=1470103552,requested_mib=1402.000,gross_pages=701,gross_bytes=1470103552,gross_mib=1402.000,staging_bytes=50331648,staging_mib=48.000,net_bytes=1419771904,net_mib=1354.000,eligible_pages=14428,selected_tensors=410,layers=60,buffer_bytes=31117259520,local_physical_bytes=29647437824,page_bytes=2097152,buffer_mib=29675.731,remote_mib=1402.000,local_physical_mib=28274.000,net_saved_mib=1354.000,page_mib=2.000
+llama_bench: error: failed to create context with model '/home/wici/gemma-4-31B-it-Q8_0.gguf'
+[
+q8_minfit,end,pp=4.5,pages=701,rc=1
+q8_minfit,start,pp=5.0,pages=779
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 32109 MiB):
+  Device 0: NVIDIA GeForce RTX 5090, compute capability 12.0, VMM: yes, VRAM: 32109 MiB
+hybrid_vmm,mode=staging,selection=global_budget,requested_pages=779,requested_bytes=1633681408,requested_mib=1558.000,gross_pages=779,gross_bytes=1633681408,gross_mib=1558.000,staging_bytes=58720256,staging_mib=56.000,net_bytes=1574961152,net_mib=1502.000,eligible_pages=14428,selected_tensors=410,layers=60,buffer_bytes=31117259520,local_physical_bytes=29483859968,page_bytes=2097152,buffer_mib=29675.731,remote_mib=1558.000,local_physical_mib=28118.000,net_saved_mib=1502.000,page_mib=2.000
+llama_bench: error: failed to create context with model '/home/wici/gemma-4-31B-it-Q8_0.gguf'
+[
+q8_minfit,end,pp=5.0,pages=779,rc=1
+q8_minfit,start,pp=6.0,pages=934
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 32109 MiB):
+  Device 0: NVIDIA GeForce RTX 5090, compute capability 12.0, VMM: yes, VRAM: 32109 MiB
+hybrid_vmm,mode=staging,selection=global_budget,requested_pages=934,requested_bytes=1958739968,requested_mib=1868.000,gross_pages=934,gross_bytes=1958739968,gross_mib=1868.000,staging_bytes=67108864,staging_mib=64.000,net_bytes=1891631104,net_mib=1804.000,eligible_pages=14428,selected_tensors=410,layers=60,buffer_bytes=31117259520,local_physical_bytes=29158801408,page_bytes=2097152,buffer_mib=29675.731,remote_mib=1868.000,local_physical_mib=27808.000,net_saved_mib=1804.000,page_mib=2.000
+[
+  {
+    "build_commit": "b820cc8",
+    "build_number": 1,
+    "cpu_info": "Intel(R) Core(TM) Ultra 5 230F",
+    "gpu_info": "NVIDIA GeForce RTX 5090",
+    "backends": "CUDA",
+    "model_filename": "/home/wici/gemma-4-31B-it-Q8_0.gguf",
+    "model_type": "gemma4 31B Q8_0",
+    "model_size": 32619841776,
+    "model_n_params": 30697345596,
+    "n_batch": 512,
+    "n_ubatch": 512,
+    "n_threads": 8,
+    "cpu_mask": "0x0",
+    "cpu_strict": false,
+    "poll": 50,
+    "type_k": "f16",
+    "type_v": "f16",
+    "n_gpu_layers": 61,
+    "n_cpu_moe": 0,
+    "split_mode": "layer",
+    "main_gpu": 0,
+    "no_kv_offload": false,
+    "flash_attn": 1,
+    "devices": "auto",
+    "tensor_split": "0.00",
+    "tensor_buft_overrides": "^blk[.][0-9]+[.](attn_(k|v|q|output)|ffn_(down|gate|up))[.]weight$=CUDA_Hybrid",
+    "use_mmap": true,
+    "use_direct_io": false,
+    "embeddings": false,
+    "no_op_offload": 0,
+    "no_host": false,
+    "fit_target": 0,
+    "fit_min_ctx": 0,
+    "n_ctx": 4096,
+    "n_prompt": 512,
+    "n_gen": 8,
+    "n_depth": 0,
+    "test_time": "2026-08-12T10:09:35Z",
+    "avg_ns": 679925377,
+    "stddev_ns": 0,
+    "avg_ts": 764.789810,
+    "stddev_ts": 0.000000,
+    "samples_ns": [ 679925377 ],
+    "samples_ts": [ 764.79 ]
+  }logit_checksum,prompt,3ad52f1c8f1bfa72,nonfinite=0
+logit_checksum,decode,5a2825c30a82ea85,nonfinite=0
+
+]
+q8_minfit,end,pp=6.0,pages=934,rc=0

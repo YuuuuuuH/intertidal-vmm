@@ -1,0 +1,251 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1040" viewBox="0 0 1600 1040" role="img" aria-labelledby="figure-title figure-desc">
+<title id="figure-title">Gemma-4-31B: capacity expansion vs. performance</title>
+<desc id="figure-desc">Four panels compare prefill and decode retention by logical working set and realized RAM-offload percentage for three memory schemes.</desc>
+<style>
+    .figure-bg { fill: #ffffff; }
+    text { fill: #222222; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; font-size: 13px; }
+    .main-title { font-size: 25px; font-weight: 600; }
+    .subtitle, .note { fill: #555555; font-size: 12px; }
+    .panel-title { font-size: 16px; font-weight: 600; }
+    .panel-letter { font-size: 17px; font-weight: 700; }
+    .plot-frame { fill: #ffffff; stroke: #777777; stroke-width: 1; }
+    .grid, .x-grid { stroke: #e7e7e7; stroke-width: 1; }
+    .grid.major { stroke: #d0d0d0; }
+    .tick { fill: #454545; font-size: 12px; }
+    .axis-title { font-size: 13px; font-weight: 600; }
+    .series-line { fill: none; stroke-width: 2.2; stroke-linejoin: round; stroke-linecap: round; }
+    .ci-whisker, .ci-cap { stroke-width: 1.5; opacity: 0.72; }
+    .target-line { stroke: #555555; stroke-width: 1.6; stroke-dasharray: 8 5; }
+    .stop-line { stroke: #b2182b; stroke-width: 1.5; stroke-dasharray: 3 4; }
+    .target-text { fill: #444444; }
+    .stop-text { fill: #9b1527; }
+    .threshold-label { font-size: 11px; font-weight: 600; }
+    .legend-item text { font-size: 12px; }
+    .no-data { fill: #777777; font-size: 14px; }
+    </style>
+<rect class="figure-bg" width="1600" height="1040"/>
+<text class="main-title" x="74" y="39">Gemma-4-31B: capacity expansion vs. performance</text>
+<text class="subtitle" x="74" y="62">Measured points only; whiskers are 95% Student-t confidence intervals when the same case has duplicate rows.</text>
+<g class="legend-item scheme-intertidal_dma"><circle cx="735.00" cy="79.00" r="5.00" fill="#0072b2" stroke="#ffffff" stroke-width="1.2"/><text x="748" y="84">Intertidal DMA staging</text></g>
+<g class="legend-item scheme-cuda_zero_copy"><rect x="985.00" y="74.00" width="10.00" height="10.00" fill="#d55e00" stroke="#ffffff" stroke-width="1.2"/><text x="1003" y="84">CUDA zero-copy</text></g>
+<g class="legend-item scheme-native_cpu_layers"><polygon points="1245.00,73.00 1239.00,84.00 1251.00,84.00" fill="#009e73" stroke="#ffffff" stroke-width="1.2"/><text x="1258" y="84">Native CPU layers</text></g>
+<g id="panel-capacity-prefill">
+<text class="panel-letter" x="55.0" y="127.0">A</text>
+<text class="panel-title" x="83.0" y="127.0">Capacity frontier — prefill</text>
+<defs><clipPath id="clip-capacity-prefill"><rect x="131.00" y="153.00" width="639.00" height="300.00"/></clipPath></defs>
+<rect class="plot-frame" x="131.00" y="153.00" width="639.00" height="300.00"/>
+<line class="grid" x1="131.00" y1="453.00" x2="770.00" y2="453.00"/>
+<text class="tick" text-anchor="end" x="122.00" y="457.00">0%</text>
+<line class="grid major" x1="131.00" y1="425.73" x2="770.00" y2="425.73"/>
+<text class="tick" text-anchor="end" x="122.00" y="429.73">10%</text>
+<line class="grid" x1="131.00" y1="398.45" x2="770.00" y2="398.45"/>
+<text class="tick" text-anchor="end" x="122.00" y="402.45">20%</text>
+<line class="grid" x1="131.00" y1="371.18" x2="770.00" y2="371.18"/>
+<text class="tick" text-anchor="end" x="122.00" y="375.18">30%</text>
+<line class="grid" x1="131.00" y1="343.91" x2="770.00" y2="343.91"/>
+<text class="tick" text-anchor="end" x="122.00" y="347.91">40%</text>
+<line class="grid" x1="131.00" y1="316.64" x2="770.00" y2="316.64"/>
+<text class="tick" text-anchor="end" x="122.00" y="320.64">50%</text>
+<line class="grid" x1="131.00" y1="289.36" x2="770.00" y2="289.36"/>
+<text class="tick" text-anchor="end" x="122.00" y="293.36">60%</text>
+<line class="grid" x1="131.00" y1="262.09" x2="770.00" y2="262.09"/>
+<text class="tick" text-anchor="end" x="122.00" y="266.09">70%</text>
+<line class="grid" x1="131.00" y1="234.82" x2="770.00" y2="234.82"/>
+<text class="tick" text-anchor="end" x="122.00" y="238.82">80%</text>
+<line class="grid" x1="131.00" y1="207.55" x2="770.00" y2="207.55"/>
+<text class="tick" text-anchor="end" x="122.00" y="211.55">90%</text>
+<line class="grid major" x1="131.00" y1="193.91" x2="770.00" y2="193.91"/>
+<text class="tick" text-anchor="end" x="122.00" y="197.91">95%</text>
+<line class="grid major" x1="131.00" y1="180.27" x2="770.00" y2="180.27"/>
+<text class="tick" text-anchor="end" x="122.00" y="184.27">100%</text>
+<line class="grid" x1="131.00" y1="153.00" x2="770.00" y2="153.00"/>
+<text class="tick" text-anchor="end" x="122.00" y="157.00">110%</text>
+<line class="x-grid" x1="131.00" y1="153.00" x2="131.00" y2="453.00"/>
+<text class="tick" text-anchor="middle" x="131.00" y="475.00">29</text>
+<line class="x-grid" x1="290.75" y1="153.00" x2="290.75" y2="453.00"/>
+<text class="tick" text-anchor="middle" x="290.75" y="475.00">30</text>
+<line class="x-grid" x1="450.50" y1="153.00" x2="450.50" y2="453.00"/>
+<text class="tick" text-anchor="middle" x="450.50" y="475.00">31</text>
+<line class="x-grid" x1="610.25" y1="153.00" x2="610.25" y2="453.00"/>
+<text class="tick" text-anchor="middle" x="610.25" y="475.00">32</text>
+<line class="x-grid" x1="770.00" y1="153.00" x2="770.00" y2="453.00"/>
+<text class="tick" text-anchor="middle" x="770.00" y="475.00">33</text>
+<line class="target-line" x1="131.00" y1="193.91" x2="770.00" y2="193.91"/>
+<text class="threshold-label target-text" text-anchor="end" x="765.00" y="187.91">95% target</text>
+<line class="stop-line" x1="131.00" y1="425.73" x2="770.00" y2="425.73"/>
+<text class="threshold-label stop-text" text-anchor="end" x="765.00" y="419.73">10% stop</text>
+<g clip-path="url(#clip-capacity-prefill)">
+<g class="series-marker scheme-intertidal_dma"><title>Intertidal DMA staging: x=30.994, retention=100.00%, n=1</title><circle cx="449.56" cy="180.27" r="5.00" fill="#0072b2" stroke="#ffffff" stroke-width="1.2"/></g>
+</g>
+<text class="axis-title" text-anchor="middle" x="450.50" y="503.00">Logical working set (GiB)</text>
+<text class="axis-title" text-anchor="middle" transform="translate(72.00,303.00) rotate(-90)">Retention vs. 31 GiB control</text>
+</g>
+<g id="panel-pure-prefill">
+<text class="panel-letter" x="815.0" y="127.0">B</text>
+<text class="panel-title" x="843.0" y="127.0">31 GiB offload curve — prefill</text>
+<defs><clipPath id="clip-pure-prefill"><rect x="891.00" y="153.00" width="639.00" height="300.00"/></clipPath></defs>
+<rect class="plot-frame" x="891.00" y="153.00" width="639.00" height="300.00"/>
+<line class="grid" x1="891.00" y1="453.00" x2="1530.00" y2="453.00"/>
+<text class="tick" text-anchor="end" x="882.00" y="457.00">0%</text>
+<line class="grid major" x1="891.00" y1="425.73" x2="1530.00" y2="425.73"/>
+<text class="tick" text-anchor="end" x="882.00" y="429.73">10%</text>
+<line class="grid" x1="891.00" y1="398.45" x2="1530.00" y2="398.45"/>
+<text class="tick" text-anchor="end" x="882.00" y="402.45">20%</text>
+<line class="grid" x1="891.00" y1="371.18" x2="1530.00" y2="371.18"/>
+<text class="tick" text-anchor="end" x="882.00" y="375.18">30%</text>
+<line class="grid" x1="891.00" y1="343.91" x2="1530.00" y2="343.91"/>
+<text class="tick" text-anchor="end" x="882.00" y="347.91">40%</text>
+<line class="grid" x1="891.00" y1="316.64" x2="1530.00" y2="316.64"/>
+<text class="tick" text-anchor="end" x="882.00" y="320.64">50%</text>
+<line class="grid" x1="891.00" y1="289.36" x2="1530.00" y2="289.36"/>
+<text class="tick" text-anchor="end" x="882.00" y="293.36">60%</text>
+<line class="grid" x1="891.00" y1="262.09" x2="1530.00" y2="262.09"/>
+<text class="tick" text-anchor="end" x="882.00" y="266.09">70%</text>
+<line class="grid" x1="891.00" y1="234.82" x2="1530.00" y2="234.82"/>
+<text class="tick" text-anchor="end" x="882.00" y="238.82">80%</text>
+<line class="grid" x1="891.00" y1="207.55" x2="1530.00" y2="207.55"/>
+<text class="tick" text-anchor="end" x="882.00" y="211.55">90%</text>
+<line class="grid major" x1="891.00" y1="193.91" x2="1530.00" y2="193.91"/>
+<text class="tick" text-anchor="end" x="882.00" y="197.91">95%</text>
+<line class="grid major" x1="891.00" y1="180.27" x2="1530.00" y2="180.27"/>
+<text class="tick" text-anchor="end" x="882.00" y="184.27">100%</text>
+<line class="grid" x1="891.00" y1="153.00" x2="1530.00" y2="153.00"/>
+<text class="tick" text-anchor="end" x="882.00" y="157.00">110%</text>
+<line class="x-grid" x1="891.00" y1="153.00" x2="891.00" y2="453.00"/>
+<text class="tick" text-anchor="middle" x="891.00" y="475.00">0</text>
+<line class="x-grid" x1="997.50" y1="153.00" x2="997.50" y2="453.00"/>
+<text class="tick" text-anchor="middle" x="997.50" y="475.00">0.2</text>
+<line class="x-grid" x1="1104.00" y1="153.00" x2="1104.00" y2="453.00"/>
+<text class="tick" text-anchor="middle" x="1104.00" y="475.00">0.4</text>
+<line class="x-grid" x1="1210.50" y1="153.00" x2="1210.50" y2="453.00"/>
+<text class="tick" text-anchor="middle" x="1210.50" y="475.00">0.6</text>
+<line class="x-grid" x1="1317.00" y1="153.00" x2="1317.00" y2="453.00"/>
+<text class="tick" text-anchor="middle" x="1317.00" y="475.00">0.8</text>
+<line class="x-grid" x1="1423.50" y1="153.00" x2="1423.50" y2="453.00"/>
+<text class="tick" text-anchor="middle" x="1423.50" y="475.00">1</text>
+<line class="x-grid" x1="1530.00" y1="153.00" x2="1530.00" y2="453.00"/>
+<text class="tick" text-anchor="middle" x="1530.00" y="475.00">1.2</text>
+<line class="target-line" x1="891.00" y1="193.91" x2="1530.00" y2="193.91"/>
+<text class="threshold-label target-text" text-anchor="end" x="1525.00" y="187.91">95% target</text>
+<line class="stop-line" x1="891.00" y1="425.73" x2="1530.00" y2="425.73"/>
+<text class="threshold-label stop-text" text-anchor="end" x="1525.00" y="419.73">10% stop</text>
+<g clip-path="url(#clip-pure-prefill)">
+<path class="series-line scheme-intertidal_dma" d="M 891.00 180.27 L 1426.08 180.68" stroke="#0072b2"/>
+<g class="series-marker scheme-intertidal_dma"><title>Intertidal DMA staging: x=0.000, retention=100.00%, n=1</title><circle cx="891.00" cy="180.27" r="5.00" fill="#0072b2" stroke="#ffffff" stroke-width="1.2"/></g>
+<g class="series-marker scheme-intertidal_dma"><title>Intertidal DMA staging: x=1.005, retention=99.85%, n=1</title><circle cx="1426.08" cy="180.68" r="5.00" fill="#0072b2" stroke="#ffffff" stroke-width="1.2"/></g>
+</g>
+<text class="axis-title" text-anchor="middle" x="1210.50" y="503.00">Gross weights in RAM (%)</text>
+<text class="axis-title" text-anchor="middle" transform="translate(832.00,303.00) rotate(-90)">Retention vs. 31 GiB control</text>
+</g>
+<g id="panel-capacity-decode">
+<text class="panel-letter" x="55.0" y="582.0">C</text>
+<text class="panel-title" x="83.0" y="582.0">Capacity frontier — decode</text>
+<defs><clipPath id="clip-capacity-decode"><rect x="131.00" y="608.00" width="639.00" height="300.00"/></clipPath></defs>
+<rect class="plot-frame" x="131.00" y="608.00" width="639.00" height="300.00"/>
+<line class="grid" x1="131.00" y1="908.00" x2="770.00" y2="908.00"/>
+<text class="tick" text-anchor="end" x="122.00" y="912.00">0%</text>
+<line class="grid major" x1="131.00" y1="880.73" x2="770.00" y2="880.73"/>
+<text class="tick" text-anchor="end" x="122.00" y="884.73">10%</text>
+<line class="grid" x1="131.00" y1="853.45" x2="770.00" y2="853.45"/>
+<text class="tick" text-anchor="end" x="122.00" y="857.45">20%</text>
+<line class="grid" x1="131.00" y1="826.18" x2="770.00" y2="826.18"/>
+<text class="tick" text-anchor="end" x="122.00" y="830.18">30%</text>
+<line class="grid" x1="131.00" y1="798.91" x2="770.00" y2="798.91"/>
+<text class="tick" text-anchor="end" x="122.00" y="802.91">40%</text>
+<line class="grid" x1="131.00" y1="771.64" x2="770.00" y2="771.64"/>
+<text class="tick" text-anchor="end" x="122.00" y="775.64">50%</text>
+<line class="grid" x1="131.00" y1="744.36" x2="770.00" y2="744.36"/>
+<text class="tick" text-anchor="end" x="122.00" y="748.36">60%</text>
+<line class="grid" x1="131.00" y1="717.09" x2="770.00" y2="717.09"/>
+<text class="tick" text-anchor="end" x="122.00" y="721.09">70%</text>
+<line class="grid" x1="131.00" y1="689.82" x2="770.00" y2="689.82"/>
+<text class="tick" text-anchor="end" x="122.00" y="693.82">80%</text>
+<line class="grid" x1="131.00" y1="662.55" x2="770.00" y2="662.55"/>
+<text class="tick" text-anchor="end" x="122.00" y="666.55">90%</text>
+<line class="grid major" x1="131.00" y1="648.91" x2="770.00" y2="648.91"/>
+<text class="tick" text-anchor="end" x="122.00" y="652.91">95%</text>
+<line class="grid major" x1="131.00" y1="635.27" x2="770.00" y2="635.27"/>
+<text class="tick" text-anchor="end" x="122.00" y="639.27">100%</text>
+<line class="grid" x1="131.00" y1="608.00" x2="770.00" y2="608.00"/>
+<text class="tick" text-anchor="end" x="122.00" y="612.00">110%</text>
+<line class="x-grid" x1="131.00" y1="608.00" x2="131.00" y2="908.00"/>
+<text class="tick" text-anchor="middle" x="131.00" y="930.00">29</text>
+<line class="x-grid" x1="290.75" y1="608.00" x2="290.75" y2="908.00"/>
+<text class="tick" text-anchor="middle" x="290.75" y="930.00">30</text>
+<line class="x-grid" x1="450.50" y1="608.00" x2="450.50" y2="908.00"/>
+<text class="tick" text-anchor="middle" x="450.50" y="930.00">31</text>
+<line class="x-grid" x1="610.25" y1="608.00" x2="610.25" y2="908.00"/>
+<text class="tick" text-anchor="middle" x="610.25" y="930.00">32</text>
+<line class="x-grid" x1="770.00" y1="608.00" x2="770.00" y2="908.00"/>
+<text class="tick" text-anchor="middle" x="770.00" y="930.00">33</text>
+<line class="target-line" x1="131.00" y1="648.91" x2="770.00" y2="648.91"/>
+<text class="threshold-label target-text" text-anchor="end" x="765.00" y="642.91">95% target</text>
+<line class="stop-line" x1="131.00" y1="880.73" x2="770.00" y2="880.73"/>
+<text class="threshold-label stop-text" text-anchor="end" x="765.00" y="874.73">10% stop</text>
+<g clip-path="url(#clip-capacity-decode)">
+<g class="series-marker scheme-intertidal_dma"><title>Intertidal DMA staging: x=30.994, retention=100.00%, n=1</title><circle cx="449.56" cy="635.27" r="5.00" fill="#0072b2" stroke="#ffffff" stroke-width="1.2"/></g>
+</g>
+<text class="axis-title" text-anchor="middle" x="450.50" y="958.00">Logical working set (GiB)</text>
+<text class="axis-title" text-anchor="middle" transform="translate(72.00,758.00) rotate(-90)">Retention vs. 31 GiB control</text>
+</g>
+<g id="panel-pure-decode">
+<text class="panel-letter" x="815.0" y="582.0">D</text>
+<text class="panel-title" x="843.0" y="582.0">31 GiB offload curve — decode</text>
+<defs><clipPath id="clip-pure-decode"><rect x="891.00" y="608.00" width="639.00" height="300.00"/></clipPath></defs>
+<rect class="plot-frame" x="891.00" y="608.00" width="639.00" height="300.00"/>
+<line class="grid" x1="891.00" y1="908.00" x2="1530.00" y2="908.00"/>
+<text class="tick" text-anchor="end" x="882.00" y="912.00">0%</text>
+<line class="grid major" x1="891.00" y1="880.73" x2="1530.00" y2="880.73"/>
+<text class="tick" text-anchor="end" x="882.00" y="884.73">10%</text>
+<line class="grid" x1="891.00" y1="853.45" x2="1530.00" y2="853.45"/>
+<text class="tick" text-anchor="end" x="882.00" y="857.45">20%</text>
+<line class="grid" x1="891.00" y1="826.18" x2="1530.00" y2="826.18"/>
+<text class="tick" text-anchor="end" x="882.00" y="830.18">30%</text>
+<line class="grid" x1="891.00" y1="798.91" x2="1530.00" y2="798.91"/>
+<text class="tick" text-anchor="end" x="882.00" y="802.91">40%</text>
+<line class="grid" x1="891.00" y1="771.64" x2="1530.00" y2="771.64"/>
+<text class="tick" text-anchor="end" x="882.00" y="775.64">50%</text>
+<line class="grid" x1="891.00" y1="744.36" x2="1530.00" y2="744.36"/>
+<text class="tick" text-anchor="end" x="882.00" y="748.36">60%</text>
+<line class="grid" x1="891.00" y1="717.09" x2="1530.00" y2="717.09"/>
+<text class="tick" text-anchor="end" x="882.00" y="721.09">70%</text>
+<line class="grid" x1="891.00" y1="689.82" x2="1530.00" y2="689.82"/>
+<text class="tick" text-anchor="end" x="882.00" y="693.82">80%</text>
+<line class="grid" x1="891.00" y1="662.55" x2="1530.00" y2="662.55"/>
+<text class="tick" text-anchor="end" x="882.00" y="666.55">90%</text>
+<line class="grid major" x1="891.00" y1="648.91" x2="1530.00" y2="648.91"/>
+<text class="tick" text-anchor="end" x="882.00" y="652.91">95%</text>
+<line class="grid major" x1="891.00" y1="635.27" x2="1530.00" y2="635.27"/>
+<text class="tick" text-anchor="end" x="882.00" y="639.27">100%</text>
+<line class="grid" x1="891.00" y1="608.00" x2="1530.00" y2="608.00"/>
+<text class="tick" text-anchor="end" x="882.00" y="612.00">110%</text>
+<line class="x-grid" x1="891.00" y1="608.00" x2="891.00" y2="908.00"/>
+<text class="tick" text-anchor="middle" x="891.00" y="930.00">0</text>
+<line class="x-grid" x1="997.50" y1="608.00" x2="997.50" y2="908.00"/>
+<text class="tick" text-anchor="middle" x="997.50" y="930.00">0.2</text>
+<line class="x-grid" x1="1104.00" y1="608.00" x2="1104.00" y2="908.00"/>
+<text class="tick" text-anchor="middle" x="1104.00" y="930.00">0.4</text>
+<line class="x-grid" x1="1210.50" y1="608.00" x2="1210.50" y2="908.00"/>
+<text class="tick" text-anchor="middle" x="1210.50" y="930.00">0.6</text>
+<line class="x-grid" x1="1317.00" y1="608.00" x2="1317.00" y2="908.00"/>
+<text class="tick" text-anchor="middle" x="1317.00" y="930.00">0.8</text>
+<line class="x-grid" x1="1423.50" y1="608.00" x2="1423.50" y2="908.00"/>
+<text class="tick" text-anchor="middle" x="1423.50" y="930.00">1</text>
+<line class="x-grid" x1="1530.00" y1="608.00" x2="1530.00" y2="908.00"/>
+<text class="tick" text-anchor="middle" x="1530.00" y="930.00">1.2</text>
+<line class="target-line" x1="891.00" y1="648.91" x2="1530.00" y2="648.91"/>
+<text class="threshold-label target-text" text-anchor="end" x="1525.00" y="642.91">95% target</text>
+<line class="stop-line" x1="891.00" y1="880.73" x2="1530.00" y2="880.73"/>
+<text class="threshold-label stop-text" text-anchor="end" x="1525.00" y="874.73">10% stop</text>
+<g clip-path="url(#clip-pure-decode)">
+<path class="series-line scheme-intertidal_dma" d="M 891.00 635.27 L 1426.08 639.59" stroke="#0072b2"/>
+<g class="series-marker scheme-intertidal_dma"><title>Intertidal DMA staging: x=0.000, retention=100.00%, n=1</title><circle cx="891.00" cy="635.27" r="5.00" fill="#0072b2" stroke="#ffffff" stroke-width="1.2"/></g>
+<g class="series-marker scheme-intertidal_dma"><title>Intertidal DMA staging: x=1.005, retention=98.42%, n=1</title><circle cx="1426.08" cy="639.59" r="5.00" fill="#0072b2" stroke="#ffffff" stroke-width="1.2"/></g>
+</g>
+<text class="axis-title" text-anchor="middle" x="1210.50" y="958.00">Gross weights in RAM (%)</text>
+<text class="axis-title" text-anchor="middle" transform="translate(832.00,758.00) rotate(-90)">Retention vs. 31 GiB control</text>
+</g>
+<text class="note" x="74" y="1011">Native: measured markers only; x = loader CPU / (CPU + CUDA) model buffers. Hybrid x = gross_remote_pp. No interpolation.</text>
+<text class="note" text-anchor="end" x="1526" y="1011">Source: gemma-capacity-sweep.csv</text>
+</svg>

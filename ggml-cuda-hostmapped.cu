@@ -1485,14 +1485,119 @@ ggml_backend_buffer_type_t ggml_backend_cuda_split_buffer_type(int main_device, 
 //
 // The tensor addresses in this buffer are stable CUDA virtual addresses.  Most
 // pages are backed by private VRAM.  A small number of complete 2 MiB pages are
-// backed by one of two shared, per-layer staging allocations.  All layers with
-// the same staging parity alias the same physical pages at their own tensor
-// addresses.  Before a layer executes, its packed host pages are copied to the
-// appropriate staging allocation.  Consequently the unmodified CUDA kernels
-// see an ordinary contiguous tensor and retain fusion, stream-K and graph
-// capture.
+// either backed by one of two shared staging allocations or mapped directly
+// to pinned host-NUMA physical pages.  In both modes the unmodified CUDA
+// kernels see an ordinary contiguous tensor and retain fusion, stream-K and
+// graph capture.  The direct mode is a deliberately simple zero-copy ablation:
+// it has no DMA staging, prefetch or CPU computation.
 
 struct ggml_backend_cuda_hybrid_buffer_context;
+
+enum class ggml_cuda_hybrid_mode {
+    staging,
+    zero_copy,
+};
+
+static const char * ggml_cuda_hybrid_mode_name(ggml_cuda_hybrid_mode mode) {
+    return mode == ggml_cuda_hybrid_mode::zero_copy ? "zero_copy" : "staging";
+}
+
+// Opt-in instrumentation for the Hybrid path.  The dependency events below
+// deliberately remain timing-disabled in normal operation.  When profiling is
+// requested we add a separate, bounded ring of timing events; consequently the
+// default path has only a single predictable branch at each prepare point and
+// creates no additional CUDA objects.
+struct ggml_cuda_hybrid_profile_sample {
+    cudaEvent_t kick       = nullptr;
+    cudaEvent_t copy_start = nullptr;
+    cudaEvent_t copy_end   = nullptr;
+    cudaEvent_t wait_start = nullptr;
+    cudaEvent_t wait_end   = nullptr;
+    cudaEvent_t work_end   = nullptr;
+    bool in_use       = false;
+    bool has_copy     = false;
+    bool has_wait     = false;
+    bool has_work_end = false;
+    bool zero_copy    = false;
+    uint64_t seq      = 0;
+    uint64_t eval_id  = 0;
+    uint64_t work_eval_id = 0;
+    int layer         = -1;
+    int parity        = -1;
+    size_t bytes      = 0;
+};
+
+struct ggml_cuda_hybrid_profile_stats {
+    uint64_t eval_count             = 0;
+    uint64_t graph_eval_count       = 0;
+    uint64_t prepare_count          = 0;
+    uint64_t prefetch_count         = 0;
+    uint64_t wait_count             = 0;
+    uint64_t zero_copy_touches      = 0;
+    uint64_t zero_copy_bytes        = 0;
+    uint64_t total_copy_bytes       = 0;
+    uint64_t sampled_copy_count     = 0;
+    uint64_t sampled_copy_bytes     = 0;
+    uint64_t sampled_wait_count     = 0;
+    uint64_t sampled_zero_copy      = 0;
+    uint64_t sampled_zero_copy_bytes = 0;
+    uint64_t prefetch_hits          = 0;
+    uint64_t prefetch_misses        = 0;
+    uint64_t dropped_samples        = 0;
+    double copy_ms                  = 0.0;
+    double ready_ms                 = 0.0;
+    double queue_ms                 = 0.0;
+    double wait_ms                  = 0.0;
+    double hidden_ms                = 0.0;
+    double work_ms                  = 0.0;
+};
+
+struct ggml_cuda_hybrid_profile_layer_stats {
+    int parity                  = -1;
+    uint64_t prepare_count      = 0;
+    uint64_t prefetch_count     = 0;
+    uint64_t wait_count         = 0;
+    uint64_t zero_copy_touches  = 0;
+    uint64_t zero_copy_bytes    = 0;
+    uint64_t total_copy_bytes   = 0;
+    uint64_t sampled_copy_count = 0;
+    uint64_t sampled_copy_bytes = 0;
+    uint64_t sampled_wait_count = 0;
+    uint64_t sampled_zero_copy  = 0;
+    uint64_t sampled_zero_copy_bytes = 0;
+    uint64_t prefetch_hits      = 0;
+    uint64_t prefetch_misses    = 0;
+    uint64_t sampled_work_count = 0;
+    double copy_ms              = 0.0;
+    double ready_ms             = 0.0;
+    double queue_ms             = 0.0;
+    double wait_ms              = 0.0;
+    double hidden_ms            = 0.0;
+    double work_ms              = 0.0;
+};
+
+struct ggml_cuda_hybrid_profile {
+    bool enabled        = false;
+    bool detail         = false;
+    uint64_t sample_every  = 1;
+    uint64_t summary_every = 128;
+    uint64_t sequence      = 0;
+    uint64_t current_eval_id = 0;
+    uint64_t completed     = 0;
+    uint64_t window_id     = 0;
+    int active_sample[2]   = { -1, -1 };
+    int last_work_sample   = -1;
+    int deferred_work_sample = -1;
+    int last_seen_layer    = -1;
+    std::vector<ggml_cuda_hybrid_profile_sample> samples;
+    ggml_cuda_hybrid_profile_stats total;
+    ggml_cuda_hybrid_profile_stats window;
+    std::map<uint64_t, ggml_cuda_hybrid_profile_stats> evals;
+    std::map<int, ggml_cuda_hybrid_profile_layer_stats> layers;
+};
+
+static void ggml_cuda_hybrid_profile_init(ggml_backend_cuda_hybrid_buffer_context * ctx);
+static void ggml_cuda_hybrid_profile_shutdown(ggml_backend_cuda_hybrid_buffer_context * ctx);
 
 struct ggml_tensor_extra_hybrid {
     ggml_backend_cuda_hybrid_buffer_context * buffer_ctx = nullptr;
@@ -1519,8 +1624,11 @@ struct ggml_cuda_hybrid_layer {
 
 struct ggml_backend_cuda_hybrid_buffer_type_context {
     int device;
+    ggml_cuda_hybrid_mode mode;
     float remote_fraction;
     int remote_pages;
+    bool page_budget_enabled;
+    size_t page_budget;
     std::string name;
 };
 
@@ -1528,8 +1636,12 @@ static bool ggml_backend_buft_is_cuda_hybrid(ggml_backend_buffer_type_t buft);
 
 struct ggml_backend_cuda_hybrid_buffer_context {
     int device = 0;
+    ggml_cuda_hybrid_mode mode = ggml_cuda_hybrid_mode::staging;
+    int host_numa_id = 0;
     float remote_fraction = 0.0f;
     int remote_pages = 0;
+    bool page_budget_enabled = false;
+    size_t page_budget = 0;
     size_t buffer_size = 0;
     size_t reserve_size = 0;
     size_t granularity = 0;
@@ -1543,12 +1655,20 @@ struct ggml_backend_cuda_hybrid_buffer_context {
     int last_prepared_layer = -1;
     bool wrap_prefetch_pending = false;
     bool finalized = false;
+    ggml_cuda_hybrid_profile profile;
     std::vector<ggml_cuda_hybrid_mapping> mappings;
     std::map<int, ggml_cuda_hybrid_layer> layers;
 
     ggml_backend_cuda_hybrid_buffer_context(
-            int device_, float remote_fraction_, int remote_pages_, size_t buffer_size_)
-        : device(device_), remote_fraction(remote_fraction_), remote_pages(remote_pages_), buffer_size(buffer_size_) {
+            int device_, ggml_cuda_hybrid_mode mode_, float remote_fraction_, int remote_pages_,
+            bool page_budget_enabled_, size_t page_budget_, size_t buffer_size_)
+        : device(device_),
+          mode(mode_),
+          remote_fraction(remote_fraction_),
+          remote_pages(remote_pages_),
+          page_budget_enabled(page_budget_enabled_),
+          page_budget(page_budget_),
+          buffer_size(buffer_size_) {
         ggml_cuda_set_device(device);
 
         CUmemAllocationProp prop = {};
@@ -1557,19 +1677,61 @@ struct ggml_backend_cuda_hybrid_buffer_context {
         prop.location.id = device;
         CU_CHECK(cuMemGetAllocationGranularity(
             &granularity, &prop, CU_MEM_ALLOC_GRANULARITY_RECOMMENDED));
+
+        if (mode == ggml_cuda_hybrid_mode::zero_copy) {
+#if CUDA_VERSION >= 12080
+            CUdevice cu_device;
+            CU_CHECK(cuDeviceGet(&cu_device, device));
+
+            // Attribute 141 was named in the CUDA 12.9 headers.  Query it by
+            // value so a CUDA 12.8 build can still use a new enough driver.
+            int host_numa_vmm_supported = 0;
+            const CUresult support_result = cuDeviceGetAttribute(
+                &host_numa_vmm_supported, static_cast<CUdevice_attribute>(141), cu_device);
+            if (support_result != CUDA_SUCCESS || host_numa_vmm_supported == 0) {
+                GGML_ABORT("CUDA device %d does not support host-NUMA VMM mappings", device);
+            }
+
+            CU_CHECK(cuDeviceGetAttribute(
+                &host_numa_id, CU_DEVICE_ATTRIBUTE_HOST_NUMA_ID, cu_device));
+            if (host_numa_id < 0) {
+                // CUDA requires node zero on systems without NUMA.
+                host_numa_id = 0;
+            }
+
+            CUmemAllocationProp host_prop = {};
+            host_prop.type = CU_MEM_ALLOCATION_TYPE_PINNED;
+            host_prop.location.type = CU_MEM_LOCATION_TYPE_HOST_NUMA;
+            host_prop.location.id = host_numa_id;
+            size_t host_granularity = 0;
+            CU_CHECK(cuMemGetAllocationGranularity(
+                &host_granularity, &host_prop, CU_MEM_ALLOC_GRANULARITY_RECOMMENDED));
+            if (host_granularity != granularity) {
+                GGML_ABORT("host/device VMM granularity mismatch: host=%zu device=%zu",
+                    host_granularity, granularity);
+            }
+#else
+            GGML_ABORT("zero-copy hybrid VMM requires CUDA toolkit 12.8 or newer");
+#endif
+        }
+
         reserve_size = granularity * ((buffer_size + granularity - 1) / granularity);
         CU_CHECK(cuMemAddressReserve(&base, reserve_size, granularity, 0, 0));
 
-        CUDA_CHECK(cudaStreamCreateWithFlags(&copy_stream, cudaStreamNonBlocking));
-        for (int p = 0; p < 2; ++p) {
-            CUDA_CHECK(cudaEventCreateWithFlags(&copy_kick[p], cudaEventDisableTiming));
-            CUDA_CHECK(cudaEventCreateWithFlags(&copy_ready[p], cudaEventDisableTiming));
+        if (mode == ggml_cuda_hybrid_mode::staging) {
+            CUDA_CHECK(cudaStreamCreateWithFlags(&copy_stream, cudaStreamNonBlocking));
+            for (int p = 0; p < 2; ++p) {
+                CUDA_CHECK(cudaEventCreateWithFlags(&copy_kick[p], cudaEventDisableTiming));
+                CUDA_CHECK(cudaEventCreateWithFlags(&copy_ready[p], cudaEventDisableTiming));
+            }
         }
+        ggml_cuda_hybrid_profile_init(this);
     }
 
     ~ggml_backend_cuda_hybrid_buffer_context() {
         ggml_cuda_set_device(device);
         CUDA_CHECK(cudaDeviceSynchronize());
+        ggml_cuda_hybrid_profile_shutdown(this);
 
         for (auto & entry : layers) {
             if (entry.second.host != nullptr) {
@@ -1612,6 +1774,550 @@ static size_t ggml_cuda_hybrid_align_down(size_t value, size_t alignment) {
     return alignment * (value / alignment);
 }
 
+static bool ggml_cuda_hybrid_profile_env_enabled(const char * name) {
+    const char * value = getenv(name);
+    return value != nullptr && strcmp(value, "0") != 0 && strcmp(value, "false") != 0;
+}
+
+static uint64_t ggml_cuda_hybrid_profile_env_uint(
+        const char * name, uint64_t default_value, uint64_t minimum, uint64_t maximum) {
+    const char * value = getenv(name);
+    if (value == nullptr) {
+        return default_value;
+    }
+    if (*value == '\0') {
+        GGML_ABORT("%s must be an integer in [%" PRIu64 ",%" PRIu64 "]", name, minimum, maximum);
+    }
+    for (const char * p = value; *p != '\0'; ++p) {
+        if (*p < '0' || *p > '9') {
+            GGML_ABORT("invalid %s: '%s'", name, value);
+        }
+    }
+    char * end = nullptr;
+    const unsigned long long parsed = strtoull(value, &end, 10);
+    if (end == value || *end != '\0' || parsed < minimum || parsed > maximum) {
+        GGML_ABORT("invalid %s: '%s' (expected [%" PRIu64 ",%" PRIu64 "])",
+            name, value, minimum, maximum);
+    }
+    return uint64_t(parsed);
+}
+
+static void ggml_cuda_hybrid_profile_init(ggml_backend_cuda_hybrid_buffer_context * ctx) {
+    ggml_cuda_hybrid_profile & profile = ctx->profile;
+    profile.enabled = ggml_cuda_hybrid_profile_env_enabled("GGML_CUDA_HYBRID_PROFILE");
+    if (!profile.enabled) {
+        if (ggml_cuda_hybrid_profile_env_enabled("GGML_CUDA_HYBRID_FORCE_DIRECT")) {
+            fprintf(stderr,
+                "hybrid_profile,version=1,event=config,mode=%s,profile_scope=direct_streams,"
+                "graphs=forced_off,force_direct_source=env,enabled=0,device=%d\n",
+                ggml_cuda_hybrid_mode_name(ctx->mode), ctx->device);
+        }
+        return;
+    }
+
+    profile.detail = ggml_cuda_hybrid_profile_env_enabled("GGML_CUDA_HYBRID_PROFILE_DETAIL");
+    profile.sample_every = ggml_cuda_hybrid_profile_env_uint(
+        "GGML_CUDA_HYBRID_PROFILE_SAMPLE_EVERY", 1, 1, std::numeric_limits<uint32_t>::max());
+    profile.summary_every = ggml_cuda_hybrid_profile_env_uint(
+        "GGML_CUDA_HYBRID_PROFILE_SUMMARY_EVERY", 128, 0, std::numeric_limits<uint32_t>::max());
+    const size_t ring_size = size_t(ggml_cuda_hybrid_profile_env_uint(
+        "GGML_CUDA_HYBRID_PROFILE_RING", 128, 8, 4096));
+    profile.samples.resize(ring_size);
+
+    for (ggml_cuda_hybrid_profile_sample & sample : profile.samples) {
+        // Timing-enabled events are intentionally confined to the opt-in path.
+        CUDA_CHECK(cudaEventCreate(&sample.kick));
+        CUDA_CHECK(cudaEventCreate(&sample.copy_start));
+        CUDA_CHECK(cudaEventCreate(&sample.copy_end));
+        CUDA_CHECK(cudaEventCreate(&sample.wait_start));
+        CUDA_CHECK(cudaEventCreate(&sample.wait_end));
+        CUDA_CHECK(cudaEventCreate(&sample.work_end));
+    }
+}
+
+static double ggml_cuda_hybrid_profile_gbps(uint64_t bytes, double milliseconds) {
+    return milliseconds > 0.0 ? double(bytes) / (milliseconds * 1000000.0) : 0.0;
+}
+
+static void ggml_cuda_hybrid_profile_emit_summary(
+        const ggml_backend_cuda_hybrid_buffer_context * ctx,
+        const ggml_cuda_hybrid_profile_stats & stats,
+        const char * event, const char * scope, uint64_t window_id, uint64_t eval_id) {
+    const double effective_gbps = ggml_cuda_hybrid_profile_gbps(stats.sampled_copy_bytes, stats.copy_ms);
+    const double overlap_pct = stats.ready_ms > 0.0 ? 100.0 * stats.hidden_ms / stats.ready_ms : 0.0;
+    const double stall_pct = stats.wait_ms + stats.work_ms > 0.0 ?
+        100.0 * stats.wait_ms / (stats.wait_ms + stats.work_ms) : 0.0;
+    fprintf(stderr,
+        "hybrid_profile,version=1,event=%s,scope=%s,window=%" PRIu64 ",eval=%" PRIu64 ",mode=%s,"
+        "profile_scope=direct_streams,graphs=forced_off,sample_every=%" PRIu64 ","
+        "eval_count=%" PRIu64 ",graph_eval_count=%" PRIu64 ",prepare_count=%" PRIu64 ","
+        "prefetch_count=%" PRIu64 ",copy_count=%" PRIu64 ",wait_count=%" PRIu64 ","
+        "total_wait_count=%" PRIu64 ","
+        "dma_count=%" PRIu64 ",dma_bytes=%" PRIu64 ",dma_ms=%.6f,"
+        "prefetch_hits=%" PRIu64 ",prefetch_misses=%" PRIu64 ","
+        "zero_copy_touches=%" PRIu64 ",zero_copy_bytes=%" PRIu64 ",estimated_read_bytes=%" PRIu64 ","
+        "zc_touches=%" PRIu64 ",zc_bytes=%" PRIu64 ","
+        "total_bytes=%" PRIu64 ","
+        "sampled_copy_count=%" PRIu64 ",sampled_bytes=%" PRIu64 ","
+        "sampled_zero_copy=%" PRIu64 ",sampled_zero_copy_bytes=%" PRIu64 ","
+        "copy_ms=%.6f,ready_ms=%.6f,queue_ms=%.6f,wait_ms=%.6f,hidden_ms=%.6f,"
+        "work_ms=%.6f,work_window_ms=%.6f,effective_gbps=%.6f,overlap_pct=%.3f,"
+        "hidden_pct=%.3f,stall_pct=%.3f,dropped=%" PRIu64 "\n",
+        event, scope, window_id, eval_id,
+        ggml_cuda_hybrid_mode_name(ctx->mode), ctx->profile.sample_every,
+        stats.eval_count, stats.graph_eval_count, stats.prepare_count,
+        stats.prefetch_count, stats.prefetch_count, stats.sampled_wait_count, stats.wait_count,
+        stats.sampled_copy_count, stats.sampled_copy_bytes, stats.copy_ms,
+        stats.prefetch_hits, stats.prefetch_misses,
+        stats.zero_copy_touches, stats.zero_copy_bytes, stats.zero_copy_bytes,
+        stats.zero_copy_touches, stats.zero_copy_bytes, stats.total_copy_bytes,
+        stats.sampled_copy_count, stats.sampled_copy_bytes,
+        stats.sampled_zero_copy, stats.sampled_zero_copy_bytes,
+        stats.copy_ms, stats.ready_ms, stats.queue_ms, stats.wait_ms, stats.hidden_ms,
+        stats.work_ms, stats.work_ms, effective_gbps, overlap_pct, overlap_pct,
+        stall_pct, stats.dropped_samples);
+}
+
+static void ggml_cuda_hybrid_profile_add_timing(
+        ggml_cuda_hybrid_profile_stats & stats,
+        const ggml_cuda_hybrid_profile_sample & sample,
+        double copy_ms, double ready_ms, double queue_ms, double wait_ms,
+        double hidden_ms, double work_ms) {
+    if (sample.zero_copy) {
+        ++stats.sampled_zero_copy;
+        stats.sampled_zero_copy_bytes += sample.bytes;
+    } else {
+        ++stats.sampled_copy_count;
+        stats.sampled_copy_bytes += sample.bytes;
+    }
+    if (sample.has_wait) {
+        ++stats.sampled_wait_count;
+    }
+    stats.copy_ms += copy_ms;
+    stats.ready_ms += ready_ms;
+    stats.queue_ms += queue_ms;
+    stats.wait_ms += wait_ms;
+    stats.hidden_ms += hidden_ms;
+    stats.work_ms += work_ms;
+}
+
+static bool ggml_cuda_hybrid_profile_event_complete(cudaEvent_t event) {
+    const cudaError_t result = cudaEventQuery(event);
+    if (result == cudaSuccess) {
+        return true;
+    }
+    if (result == cudaErrorNotReady) {
+        return false;
+    }
+    CUDA_CHECK(result);
+    return false;
+}
+
+static double ggml_cuda_hybrid_profile_elapsed(cudaEvent_t begin, cudaEvent_t end) {
+    float milliseconds = 0.0f;
+    CUDA_CHECK(cudaEventElapsedTime(&milliseconds, begin, end));
+    return milliseconds;
+}
+
+static void ggml_cuda_hybrid_profile_collect(
+        ggml_backend_cuda_hybrid_buffer_context * ctx,
+        ggml_cuda_hybrid_profile_sample & sample, bool force) {
+    if (!sample.in_use) {
+        return;
+    }
+
+    // Keep the most recent layer sample alive until the next boundary records
+    // work_end.  Forced shutdown still reports its copy/wait data, with no
+    // fabricated workload duration.
+    cudaEvent_t final_event = nullptr;
+    if (sample.has_work_end) {
+        final_event = sample.work_end;
+    } else if (sample.zero_copy || sample.has_wait) {
+        final_event = sample.wait_end;
+    } else if (sample.has_copy) {
+        final_event = sample.copy_end;
+    }
+    if (final_event == nullptr || (!force && !sample.has_work_end) ||
+        (!force && !ggml_cuda_hybrid_profile_event_complete(final_event))) {
+        return;
+    }
+
+    double copy_ms = 0.0;
+    double ready_ms = 0.0;
+    double queue_ms = 0.0;
+    double wait_ms = 0.0;
+    double work_ms = 0.0;
+    if (sample.has_copy) {
+        queue_ms = ggml_cuda_hybrid_profile_elapsed(sample.kick, sample.copy_start);
+        copy_ms = ggml_cuda_hybrid_profile_elapsed(sample.copy_start, sample.copy_end);
+        ready_ms = ggml_cuda_hybrid_profile_elapsed(sample.kick, sample.copy_end);
+    }
+    if (sample.has_wait) {
+        wait_ms = ggml_cuda_hybrid_profile_elapsed(sample.wait_start, sample.wait_end);
+    }
+    if (sample.has_work_end) {
+        work_ms = ggml_cuda_hybrid_profile_elapsed(sample.wait_end, sample.work_end);
+    }
+    const double hidden_ms = std::max(0.0, ready_ms - wait_ms);
+    const double gbps = ggml_cuda_hybrid_profile_gbps(sample.bytes, copy_ms);
+    const double overlap_pct = ready_ms > 0.0 ? 100.0 * hidden_ms / ready_ms : 0.0;
+    const double stall_pct = wait_ms + work_ms > 0.0 ?
+        100.0 * wait_ms / (wait_ms + work_ms) : 0.0;
+    // A sampled prefetch is considered hidden when at most 5% of its
+    // kick-to-ready interval (or 10 us, whichever is larger) stalls main.
+    const bool prefetch_hit = sample.has_wait &&
+        wait_ms <= std::max(0.010, ready_ms * 0.05);
+
+    ggml_cuda_hybrid_profile & profile = ctx->profile;
+    ggml_cuda_hybrid_profile_add_timing(
+        profile.total, sample, copy_ms, ready_ms, queue_ms, wait_ms, hidden_ms, work_ms);
+    ggml_cuda_hybrid_profile_add_timing(
+        profile.window, sample, copy_ms, ready_ms, queue_ms, wait_ms, hidden_ms, work_ms);
+    ggml_cuda_hybrid_profile_stats & eval_stats = profile.evals[sample.eval_id];
+    // DMA and wait belong to the graph evaluation that scheduled them.  A
+    // wrap-prefetched layer can execute in the next evaluation, so attribute
+    // its work window separately when that happens.
+    ggml_cuda_hybrid_profile_add_timing(
+        eval_stats, sample, copy_ms, ready_ms, queue_ms, wait_ms, hidden_ms,
+        sample.work_eval_id == sample.eval_id ? work_ms : 0.0);
+    if (sample.has_work_end && sample.work_eval_id != 0 && sample.work_eval_id != sample.eval_id) {
+        profile.evals[sample.work_eval_id].work_ms += work_ms;
+    }
+    if (!sample.zero_copy && sample.has_wait) {
+        if (prefetch_hit) {
+            ++profile.total.prefetch_hits;
+            ++profile.window.prefetch_hits;
+            ++eval_stats.prefetch_hits;
+        } else {
+            ++profile.total.prefetch_misses;
+            ++profile.window.prefetch_misses;
+            ++eval_stats.prefetch_misses;
+        }
+    }
+
+    ggml_cuda_hybrid_profile_layer_stats & layer = profile.layers[sample.layer];
+    layer.parity = sample.parity;
+    if (sample.zero_copy) {
+        ++layer.sampled_zero_copy;
+        layer.sampled_zero_copy_bytes += sample.bytes;
+    } else {
+        ++layer.sampled_copy_count;
+        layer.sampled_copy_bytes += sample.bytes;
+        if (sample.has_wait) {
+            if (prefetch_hit) {
+                ++layer.prefetch_hits;
+            } else {
+                ++layer.prefetch_misses;
+            }
+        }
+    }
+    if (sample.has_work_end) {
+        ++layer.sampled_work_count;
+    }
+    if (sample.has_wait) {
+        ++layer.sampled_wait_count;
+    }
+    layer.copy_ms += copy_ms;
+    layer.ready_ms += ready_ms;
+    layer.queue_ms += queue_ms;
+    layer.wait_ms += wait_ms;
+    layer.hidden_ms += hidden_ms;
+    layer.work_ms += work_ms;
+
+    if (profile.detail) {
+        if (sample.zero_copy) {
+            fprintf(stderr,
+                "hybrid_profile,version=1,event=zero_copy,mode=zero_copy,profile_scope=direct_streams,"
+                "seq=%" PRIu64 ",eval=%" PRIu64 ",work_eval=%" PRIu64 ","
+                "layer=%d,parity=%d,remote_bytes=%zu,estimated_read_bytes=%zu,"
+                "work_ms=%.6f,work_window_ms=%.6f,work_complete=%d\n",
+                sample.seq, sample.eval_id, sample.work_eval_id,
+                sample.layer, sample.parity, sample.bytes, sample.bytes,
+                work_ms, work_ms, sample.has_work_end ? 1 : 0);
+        } else {
+            fprintf(stderr,
+                "hybrid_profile,version=1,event=dma,mode=staging,profile_scope=direct_streams,"
+                "seq=%" PRIu64 ",eval=%" PRIu64 ",work_eval=%" PRIu64 ","
+                "layer=%d,parity=%d,bytes=%zu,copy_ms=%.6f,"
+                "kick_to_ready_ms=%.6f,ready_ms=%.6f,queue_ms=%.6f,hidden_ms=%.6f,"
+                "effective_gbps=%.6f,hidden_pct=%.3f\n",
+                sample.seq, sample.eval_id, sample.work_eval_id,
+                sample.layer, sample.parity, sample.bytes, copy_ms,
+                ready_ms, ready_ms, queue_ms, hidden_ms, gbps, overlap_pct);
+            fprintf(stderr,
+                "hybrid_profile,version=1,event=wait,mode=staging,profile_scope=direct_streams,"
+                "seq=%" PRIu64 ",eval=%" PRIu64 ",work_eval=%" PRIu64 ","
+                "layer=%d,parity=%d,wait_ms=%.6f,work_ms=%.6f,"
+                "work_window_ms=%.6f,stall_pct=%.3f,prefetch_hit=%d,work_complete=%d\n",
+                sample.seq, sample.eval_id, sample.work_eval_id,
+                sample.layer, sample.parity, wait_ms, work_ms, work_ms,
+                stall_pct, prefetch_hit ? 1 : 0, sample.has_work_end ? 1 : 0);
+        }
+    }
+
+    sample.in_use = false;
+    sample.has_copy = false;
+    sample.has_wait = false;
+    sample.has_work_end = false;
+    ++profile.completed;
+    if (profile.summary_every != 0 && profile.completed % profile.summary_every == 0) {
+        ggml_cuda_hybrid_profile_emit_summary(
+            ctx, profile.window, "summary", "window", ++profile.window_id, 0);
+        profile.window = {};
+    }
+}
+
+static void ggml_cuda_hybrid_profile_drain(
+        ggml_backend_cuda_hybrid_buffer_context * ctx, bool force) {
+    if (!ctx->profile.enabled) {
+        return;
+    }
+    for (ggml_cuda_hybrid_profile_sample & sample : ctx->profile.samples) {
+        ggml_cuda_hybrid_profile_collect(ctx, sample, force);
+    }
+}
+
+static int ggml_cuda_hybrid_profile_allocate(
+        ggml_backend_cuda_hybrid_buffer_context * ctx,
+        uint64_t seq, int layer, int parity, size_t bytes, bool zero_copy) {
+    ggml_cuda_hybrid_profile & profile = ctx->profile;
+    ggml_cuda_hybrid_profile_drain(ctx, false);
+    for (ggml_cuda_hybrid_profile_sample & sample : profile.samples) {
+        if (sample.in_use) {
+            continue;
+        }
+        sample.in_use = true;
+        sample.has_copy = false;
+        sample.has_wait = false;
+        sample.has_work_end = false;
+        sample.zero_copy = zero_copy;
+        sample.seq = seq;
+        sample.eval_id = profile.current_eval_id;
+        sample.work_eval_id = 0;
+        sample.layer = layer;
+        sample.parity = parity;
+        sample.bytes = bytes;
+        return int(&sample - profile.samples.data());
+    }
+    ++profile.total.dropped_samples;
+    ++profile.window.dropped_samples;
+    ++profile.evals[profile.current_eval_id].dropped_samples;
+    return -1;
+}
+
+static void ggml_cuda_hybrid_profile_close_work(
+        ggml_backend_cuda_hybrid_buffer_context * ctx, cudaStream_t main_stream) {
+    ggml_cuda_hybrid_profile & profile = ctx->profile;
+    const int index = profile.last_work_sample;
+    if (index < 0) {
+        return;
+    }
+    ggml_cuda_hybrid_profile_sample & sample = profile.samples[size_t(index)];
+    if (sample.in_use && !sample.has_work_end) {
+        CUDA_CHECK(cudaEventRecord(sample.work_end, main_stream));
+        sample.has_work_end = true;
+        sample.work_eval_id = profile.current_eval_id;
+    }
+    profile.last_work_sample = -1;
+}
+
+static bool ggml_cuda_hybrid_profile_note_prepare(
+        ggml_backend_cuda_hybrid_buffer_context * ctx, int layer) {
+    ggml_cuda_hybrid_profile & profile = ctx->profile;
+    if (profile.last_seen_layer == layer) {
+        return false;
+    }
+    profile.last_seen_layer = layer;
+    ++profile.total.prepare_count;
+    ++profile.window.prepare_count;
+    ++profile.evals[profile.current_eval_id].prepare_count;
+    ++profile.layers[layer].prepare_count;
+    return true;
+}
+
+static int ggml_cuda_hybrid_profile_begin_copy(
+        ggml_backend_cuda_hybrid_buffer_context * ctx,
+        const ggml_cuda_hybrid_layer & layer, cudaStream_t main_stream) {
+    ggml_cuda_hybrid_profile & profile = ctx->profile;
+    ++profile.total.prefetch_count;
+    ++profile.window.prefetch_count;
+    ++profile.evals[profile.current_eval_id].prefetch_count;
+    profile.total.total_copy_bytes += layer.size;
+    profile.window.total_copy_bytes += layer.size;
+    profile.evals[profile.current_eval_id].total_copy_bytes += layer.size;
+    ggml_cuda_hybrid_profile_layer_stats & layer_stats = profile.layers[layer.layer];
+    layer_stats.parity = layer.parity;
+    ++layer_stats.prefetch_count;
+    layer_stats.total_copy_bytes += layer.size;
+
+    const uint64_t seq = ++profile.sequence;
+    profile.active_sample[layer.parity] = -1;
+    if ((seq - 1) % profile.sample_every != 0) {
+        return -1;
+    }
+    const int index = ggml_cuda_hybrid_profile_allocate(
+        ctx, seq, layer.layer, layer.parity, layer.size, false);
+    if (index >= 0) {
+        ggml_cuda_hybrid_profile_sample & sample = profile.samples[size_t(index)];
+        CUDA_CHECK(cudaEventRecord(sample.kick, main_stream));
+        profile.active_sample[layer.parity] = index;
+    }
+    return index;
+}
+
+static int ggml_cuda_hybrid_profile_begin_wait(
+        ggml_backend_cuda_hybrid_buffer_context * ctx,
+        const ggml_cuda_hybrid_layer & layer, cudaStream_t main_stream) {
+    ggml_cuda_hybrid_profile & profile = ctx->profile;
+    ggml_cuda_hybrid_profile_close_work(ctx, main_stream);
+    ++profile.total.wait_count;
+    ++profile.window.wait_count;
+    ++profile.evals[profile.current_eval_id].wait_count;
+    ++profile.layers[layer.layer].wait_count;
+
+    const int index = profile.active_sample[layer.parity];
+    if (index >= 0) {
+        ggml_cuda_hybrid_profile_sample & sample = profile.samples[size_t(index)];
+        if (sample.in_use && sample.layer == layer.layer) {
+            CUDA_CHECK(cudaEventRecord(sample.wait_start, main_stream));
+            return index;
+        }
+    }
+    return -1;
+}
+
+static void ggml_cuda_hybrid_profile_end_wait(
+        ggml_backend_cuda_hybrid_buffer_context * ctx,
+        const ggml_cuda_hybrid_layer & layer, int index, cudaStream_t main_stream,
+        bool defer_work = false) {
+    ggml_cuda_hybrid_profile & profile = ctx->profile;
+    if (index >= 0) {
+        ggml_cuda_hybrid_profile_sample & sample = profile.samples[size_t(index)];
+        CUDA_CHECK(cudaEventRecord(sample.wait_end, main_stream));
+        sample.has_wait = true;
+        if (defer_work) {
+            profile.deferred_work_sample = index;
+        } else {
+            profile.last_work_sample = index;
+        }
+    }
+    profile.active_sample[layer.parity] = -1;
+    ggml_cuda_hybrid_profile_drain(ctx, false);
+}
+
+static void ggml_cuda_hybrid_profile_zero_copy_touch(
+        ggml_backend_cuda_hybrid_buffer_context * ctx,
+        const ggml_cuda_hybrid_layer & layer, cudaStream_t main_stream) {
+    ggml_cuda_hybrid_profile & profile = ctx->profile;
+    ggml_cuda_hybrid_profile_close_work(ctx, main_stream);
+    ++profile.total.zero_copy_touches;
+    ++profile.window.zero_copy_touches;
+    ++profile.evals[profile.current_eval_id].zero_copy_touches;
+    profile.total.zero_copy_bytes += layer.size;
+    profile.window.zero_copy_bytes += layer.size;
+    profile.evals[profile.current_eval_id].zero_copy_bytes += layer.size;
+    ggml_cuda_hybrid_profile_layer_stats & layer_stats = profile.layers[layer.layer];
+    layer_stats.parity = layer.parity;
+    ++layer_stats.zero_copy_touches;
+    layer_stats.zero_copy_bytes += layer.size;
+
+    const uint64_t seq = ++profile.sequence;
+    if ((seq - 1) % profile.sample_every != 0) {
+        return;
+    }
+    const int index = ggml_cuda_hybrid_profile_allocate(
+        ctx, seq, layer.layer, layer.parity, layer.size, true);
+    if (index >= 0) {
+        ggml_cuda_hybrid_profile_sample & sample = profile.samples[size_t(index)];
+        // In zero-copy mode this event is a layer-start marker, not a wait.
+        CUDA_CHECK(cudaEventRecord(sample.wait_end, main_stream));
+        profile.last_work_sample = index;
+    }
+}
+
+static void ggml_cuda_hybrid_profile_note_eval(
+        ggml_backend_cuda_hybrid_buffer_context * ctx, bool graph_eval, cudaStream_t main_stream) {
+    if (ctx == nullptr || !ctx->profile.enabled) {
+        return;
+    }
+    ggml_cuda_hybrid_profile_close_work(ctx, main_stream);
+    ++ctx->profile.current_eval_id;
+    ctx->profile.last_seen_layer = -1;
+    ++ctx->profile.total.eval_count;
+    ++ctx->profile.window.eval_count;
+    ++ctx->profile.evals[ctx->profile.current_eval_id].eval_count;
+    if (graph_eval) {
+        ++ctx->profile.total.graph_eval_count;
+        ++ctx->profile.window.graph_eval_count;
+        ++ctx->profile.evals[ctx->profile.current_eval_id].graph_eval_count;
+    }
+    ggml_cuda_hybrid_profile_drain(ctx, false);
+}
+
+static void ggml_cuda_hybrid_profile_shutdown(ggml_backend_cuda_hybrid_buffer_context * ctx) {
+    ggml_cuda_hybrid_profile & profile = ctx->profile;
+    if (!profile.enabled) {
+        return;
+    }
+    ggml_cuda_hybrid_profile_drain(ctx, true);
+    if (profile.window.eval_count != 0 || profile.window.prepare_count != 0 ||
+        profile.window.prefetch_count != 0 || profile.window.zero_copy_touches != 0 ||
+        profile.window.sampled_copy_count != 0 || profile.window.sampled_zero_copy != 0) {
+        ggml_cuda_hybrid_profile_emit_summary(
+            ctx, profile.window, "summary", "window", ++profile.window_id, 0);
+    }
+    ggml_cuda_hybrid_profile_emit_summary(
+        ctx, profile.total, "summary", "total", profile.window_id, 0);
+    for (const auto & entry : profile.evals) {
+        ggml_cuda_hybrid_profile_emit_summary(
+            ctx, entry.second, "eval", "eval", 0, entry.first);
+    }
+
+    for (const auto & entry : profile.layers) {
+        const int layer_index = entry.first;
+        const ggml_cuda_hybrid_profile_layer_stats & layer = entry.second;
+        const double effective_gbps = ggml_cuda_hybrid_profile_gbps(layer.sampled_copy_bytes, layer.copy_ms);
+        const double overlap_pct = layer.ready_ms > 0.0 ? 100.0 * layer.hidden_ms / layer.ready_ms : 0.0;
+        const double stall_pct = layer.wait_ms + layer.work_ms > 0.0 ?
+            100.0 * layer.wait_ms / (layer.wait_ms + layer.work_ms) : 0.0;
+        fprintf(stderr,
+            "hybrid_profile,version=1,event=layer,mode=%s,profile_scope=direct_streams,layer=%d,"
+            "parity=%d,prepare_count=%" PRIu64 ",prefetch_count=%" PRIu64 ",copy_count=%" PRIu64 ","
+            "dma_count=%" PRIu64 ",dma_bytes=%" PRIu64 ",dma_ms=%.6f,"
+            "prefetch_hits=%" PRIu64 ",prefetch_misses=%" PRIu64 ","
+            "wait_count=%" PRIu64 ",total_wait_count=%" PRIu64 ","
+            "zero_copy_touches=%" PRIu64 ",zero_copy_bytes=%" PRIu64 ","
+            "estimated_read_bytes=%" PRIu64 ",zc_touches=%" PRIu64 ",zc_bytes=%" PRIu64 ","
+            "total_bytes=%" PRIu64 ",sampled_copy_count=%" PRIu64 ",sampled_bytes=%" PRIu64 ","
+            "sampled_zero_copy=%" PRIu64 ",sampled_zero_copy_bytes=%" PRIu64 ","
+            "sampled_work_count=%" PRIu64 ",copy_ms=%.6f,ready_ms=%.6f,queue_ms=%.6f,"
+            "wait_ms=%.6f,hidden_ms=%.6f,work_ms=%.6f,work_window_ms=%.6f,"
+            "effective_gbps=%.6f,overlap_pct=%.3f,hidden_pct=%.3f,stall_pct=%.3f\n",
+            ggml_cuda_hybrid_mode_name(ctx->mode), layer_index, layer.parity,
+            layer.prepare_count, layer.prefetch_count, layer.prefetch_count,
+            layer.sampled_copy_count, layer.sampled_copy_bytes, layer.copy_ms,
+            layer.prefetch_hits, layer.prefetch_misses,
+            layer.sampled_wait_count, layer.wait_count,
+            layer.zero_copy_touches, layer.zero_copy_bytes,
+            layer.zero_copy_bytes, layer.zero_copy_touches, layer.zero_copy_bytes,
+            layer.total_copy_bytes, layer.sampled_copy_count, layer.sampled_copy_bytes,
+            layer.sampled_zero_copy, layer.sampled_zero_copy_bytes, layer.sampled_work_count,
+            layer.copy_ms, layer.ready_ms, layer.queue_ms,
+            layer.wait_ms, layer.hidden_ms, layer.work_ms, layer.work_ms,
+            effective_gbps, overlap_pct, overlap_pct, stall_pct);
+    }
+
+    for (ggml_cuda_hybrid_profile_sample & sample : profile.samples) {
+        CUDA_CHECK(cudaEventDestroy(sample.kick));
+        CUDA_CHECK(cudaEventDestroy(sample.copy_start));
+        CUDA_CHECK(cudaEventDestroy(sample.copy_end));
+        CUDA_CHECK(cudaEventDestroy(sample.wait_start));
+        CUDA_CHECK(cudaEventDestroy(sample.wait_end));
+        CUDA_CHECK(cudaEventDestroy(sample.work_end));
+    }
+    profile.samples.clear();
+}
+
 static int ggml_cuda_hybrid_layer_from_name(const char * name) {
     const char * marker = strstr(name, "blk.");
     if (marker == nullptr) {
@@ -1623,16 +2329,96 @@ static int ggml_cuda_hybrid_layer_from_name(const char * name) {
     return end == marker || layer < 0 || layer > INT_MAX ? -1 : int(layer);
 }
 
+struct ggml_cuda_hybrid_candidate {
+    ggml_tensor_extra_hybrid * extra = nullptr;
+    size_t end_full = 0;
+    size_t available_pages = 0;
+    size_t selected_pages = 0;
+};
+
+// Return a deterministic, low-discrepancy permutation of the sorted layers.
+// Prefixes are spread across the full model instead of clustering at blk.0.
+// This is important for fine-grained nested sweeps: budget N+1 adds exactly
+// one page to budget N while partial rounds remain balanced across the two
+// alternating staging slots.
+static std::vector<int> ggml_cuda_hybrid_interleave_layers(const std::vector<int> & layers) {
+    if (layers.size() <= 1) {
+        return layers;
+    }
+
+    size_t radix = 1;
+    unsigned int bits = 0;
+    while (radix < layers.size()) {
+        radix <<= 1;
+        ++bits;
+    }
+
+    std::vector<size_t> low_discrepancy_indices;
+    std::vector<bool> emitted(layers.size(), false);
+    low_discrepancy_indices.reserve(layers.size());
+    for (size_t sample = 0; sample < radix; ++sample) {
+        size_t value = sample;
+        size_t reversed = 0;
+        for (unsigned int bit = 0; bit < bits; ++bit) {
+            reversed = (reversed << 1) | (value & 1);
+            value >>= 1;
+        }
+        const size_t index = reversed * layers.size() / radix;
+        if (!emitted[index]) {
+            emitted[index] = true;
+            low_discrepancy_indices.push_back(index);
+        }
+    }
+    GGML_ASSERT(low_discrepancy_indices.size() == layers.size());
+
+    // Once every layer participates, the sorted layer position determines its
+    // staging parity.  Interleave the two parity subsequences so that partial
+    // rounds do not grow one physical slot several pages ahead of the other.
+    std::vector<size_t> parity_indices[2];
+    for (size_t index : low_discrepancy_indices) {
+        parity_indices[index & 1].push_back(index);
+    }
+
+    std::vector<int> result;
+    result.reserve(layers.size());
+    const size_t parity_rounds = std::max(parity_indices[0].size(), parity_indices[1].size());
+    for (size_t i = 0; i < parity_rounds; ++i) {
+        for (int parity = 0; parity < 2; ++parity) {
+            if (i < parity_indices[parity].size()) {
+                result.push_back(layers[parity_indices[parity][i]]);
+            }
+        }
+    }
+    return result;
+}
+
 static void ggml_cuda_hybrid_map(
         ggml_backend_cuda_hybrid_buffer_context * ctx,
-        CUdeviceptr addr, size_t size, CUmemGenericAllocationHandle handle, size_t handle_offset) {
+        CUdeviceptr addr, size_t size, CUmemGenericAllocationHandle handle, size_t handle_offset,
+        bool host_backed = false) {
     GGML_ASSERT(size > 0 && size % ctx->granularity == 0);
     CU_CHECK(cuMemMap(addr, size, handle_offset, handle, 0));
-    CUmemAccessDesc access = {};
-    access.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
-    access.location.id = ctx->device;
-    access.flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE;
-    CU_CHECK(cuMemSetAccess(addr, size, &access, 1));
+
+    if (host_backed) {
+#if CUDA_VERSION >= 12080
+        CUmemAccessDesc access[2] = {};
+        access[0].location.type = CU_MEM_LOCATION_TYPE_HOST_NUMA;
+        access[0].location.id = ctx->host_numa_id;
+        access[0].flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE;
+        access[1].location.type = CU_MEM_LOCATION_TYPE_DEVICE;
+        access[1].location.id = ctx->device;
+        access[1].flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE;
+        CU_CHECK(cuMemSetAccess(addr, size, access, 2));
+#else
+        GGML_ABORT("zero-copy hybrid VMM requires CUDA toolkit 12.8 or newer");
+#endif
+    } else {
+        CUmemAccessDesc access = {};
+        access.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
+        access.location.id = ctx->device;
+        access.flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE;
+        CU_CHECK(cuMemSetAccess(addr, size, &access, 1));
+    }
     ctx->mappings.push_back({ addr, size });
 }
 
@@ -1640,15 +2426,18 @@ static void ggml_cuda_hybrid_finalize(ggml_backend_cuda_hybrid_buffer_context * 
     if (ctx->finalized) {
         return;
     }
-    ctx->finalized = true;
     ggml_cuda_set_device(ctx->device);
 
     const size_t page = ctx->granularity;
     const size_t n_pages = ctx->reserve_size / page;
     std::vector<int> page_owner(n_pages, -1);
 
-    // Select only complete pages wholly contained in a tensor.  This keeps the
-    // virtual tensor byte layout unchanged and makes every staged byte useful.
+    // Only complete pages wholly contained in a tensor are eligible.  This
+    // keeps the virtual tensor byte layout unchanged and makes every staged
+    // byte useful.
+    std::vector<ggml_cuda_hybrid_candidate> candidates;
+    std::map<int, std::vector<size_t>> candidates_by_layer;
+    size_t eligible_pages = 0;
     for (ggml_tensor_extra_hybrid * extra : ctx->tensor_extras) {
         if (extra->layer < 0 || extra->nbytes < page) {
             continue;
@@ -1659,37 +2448,117 @@ static void ggml_cuda_hybrid_finalize(ggml_backend_cuda_hybrid_buffer_context * 
             continue;
         }
 
-        size_t wanted_pages = 0;
-        if (ctx->remote_pages > 0) {
-            wanted_pages = size_t(ctx->remote_pages);
-        } else {
-            const size_t wanted_bytes = size_t(std::ceil(double(extra->nbytes) * ctx->remote_fraction));
-            wanted_pages = wanted_bytes / page;
+        const size_t available_pages = (end_full - first_full) / page;
+        const size_t candidate_index = candidates.size();
+        candidates.push_back({ extra, end_full, available_pages, 0 });
+        candidates_by_layer[extra->layer].push_back(candidate_index);
+        eligible_pages += available_pages;
+    }
+
+    // A tensor rank is its stable size/name order inside a layer, matching the
+    // selector used by the original benchmark harness.
+    for (auto & entry : candidates_by_layer) {
+        std::sort(entry.second.begin(), entry.second.end(), [&](size_t lhs, size_t rhs) {
+            const ggml_tensor_extra_hybrid * a = candidates[lhs].extra;
+            const ggml_tensor_extra_hybrid * b = candidates[rhs].extra;
+            if (a->nbytes != b->nbytes) {
+                return a->nbytes > b->nbytes;
+            }
+            const int name_order = strcmp(a->tensor->name, b->tensor->name);
+            return name_order != 0 ? name_order < 0 : a->offset < b->offset;
+        });
+    }
+
+    size_t requested_pages = 0;
+    if (ctx->page_budget_enabled) {
+        requested_pages = ctx->page_budget;
+
+        std::vector<int> sorted_layers;
+        sorted_layers.reserve(candidates_by_layer.size());
+        size_t max_rank = 0;
+        size_t max_depth = 0;
+        for (const auto & entry : candidates_by_layer) {
+            sorted_layers.push_back(entry.first);
+            max_rank = std::max(max_rank, entry.second.size());
+            for (size_t candidate_index : entry.second) {
+                max_depth = std::max(max_depth, candidates[candidate_index].available_pages);
+            }
         }
-        wanted_pages = std::min(wanted_pages, (end_full - first_full) / page);
-        if (wanted_pages == 0) {
+        const std::vector<int> layer_order = ggml_cuda_hybrid_interleave_layers(sorted_layers);
+
+        // Stable nested allocation order: page depth, tensor rank, then the
+        // low-discrepancy layer order.  Increasing the global budget by one can
+        // therefore only add one remote page; it never moves or removes one.
+        size_t selected_pages = 0;
+        for (size_t depth = 0; depth < max_depth && selected_pages < requested_pages; ++depth) {
+            for (size_t rank = 0; rank < max_rank && selected_pages < requested_pages; ++rank) {
+                for (int layer : layer_order) {
+                    const std::vector<size_t> & layer_candidates = candidates_by_layer.at(layer);
+                    if (rank >= layer_candidates.size()) {
+                        continue;
+                    }
+                    ggml_cuda_hybrid_candidate & candidate = candidates[layer_candidates[rank]];
+                    if (depth >= candidate.available_pages) {
+                        continue;
+                    }
+                    ++candidate.selected_pages;
+                    if (++selected_pages == requested_pages) {
+                        break;
+                    }
+                }
+            }
+        }
+    } else {
+        // Legacy compatibility: GGML_CUDA_HYBRID_PAGES remains a per-tensor
+        // setting, and FRACTION retains its previous per-tensor rounding.
+        for (ggml_cuda_hybrid_candidate & candidate : candidates) {
+            size_t wanted_pages = 0;
+            if (ctx->remote_pages > 0) {
+                wanted_pages = size_t(ctx->remote_pages);
+            } else {
+                const size_t wanted_bytes = size_t(
+                    std::ceil(double(candidate.extra->nbytes) * ctx->remote_fraction));
+                wanted_pages = wanted_bytes / page;
+            }
+            if (wanted_pages > std::numeric_limits<size_t>::max() - requested_pages) {
+                requested_pages = std::numeric_limits<size_t>::max();
+            } else {
+                requested_pages += wanted_pages;
+            }
+            candidate.selected_pages = std::min(wanted_pages, candidate.available_pages);
+        }
+    }
+
+    size_t gross_remote_pages = 0;
+    size_t selected_tensors = 0;
+    for (ggml_cuda_hybrid_candidate & candidate : candidates) {
+        if (candidate.selected_pages == 0) {
             continue;
         }
-
-        extra->remote_size = wanted_pages * page;
-        extra->remote_addr = ctx->base + end_full - extra->remote_size;
+        ggml_tensor_extra_hybrid * extra = candidate.extra;
+        extra->remote_size = candidate.selected_pages * page;
+        extra->remote_addr = ctx->base + candidate.end_full - extra->remote_size;
         auto & layer = ctx->layers[extra->layer];
         layer.layer = extra->layer;
         extra->slot_offset = layer.size;
         layer.size += extra->remote_size;
 
         const size_t first_page = size_t(extra->remote_addr - ctx->base) / page;
-        for (size_t i = 0; i < wanted_pages; ++i) {
+        for (size_t i = 0; i < candidate.selected_pages; ++i) {
             GGML_ASSERT(page_owner[first_page + i] == -1);
             page_owner[first_page + i] = extra->layer;
         }
+        gross_remote_pages += candidate.selected_pages;
+        ++selected_tensors;
     }
 
-    int parity = 0;
-    for (auto & entry : ctx->layers) {
-        entry.second.parity = parity;
-        ctx->slot_size[parity] = std::max(ctx->slot_size[parity], entry.second.size);
-        parity ^= 1;
+    if (ctx->mode == ggml_cuda_hybrid_mode::staging) {
+        int parity = 0;
+        for (auto & entry : ctx->layers) {
+            entry.second.parity = parity;
+            ctx->slot_size[parity] = std::max(ctx->slot_size[parity], entry.second.size);
+            parity ^= 1;
+        }
     }
 
     CUmemAllocationProp prop = {};
@@ -1697,7 +2566,7 @@ static void ggml_cuda_hybrid_finalize(ggml_backend_cuda_hybrid_buffer_context * 
     prop.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
     prop.location.id = ctx->device;
 
-    // Map private VRAM for each maximal run of non-staged pages.
+    // Map private VRAM for each maximal run of local pages.
     size_t local_bytes = 0;
     for (size_t begin = 0; begin < n_pages;) {
         if (page_owner[begin] != -1) {
@@ -1717,59 +2586,116 @@ static void ggml_cuda_hybrid_finalize(ggml_backend_cuda_hybrid_buffer_context * 
         begin = end;
     }
 
-    // Two physical slots are each mapped once as a contiguous copy destination
-    // and then aliased into every layer of that parity at the tensor's stable
-    // address.  Use one physical handle per page: NVIDIA limits the number of
-    // aliases of a single handle, while a page handle only needs one alias per
-    // alternating layer (about 30 for a 60-layer model).
-    for (int p = 0; p < 2; ++p) {
-        if (ctx->slot_size[p] == 0) {
-            continue;
-        }
-        ctx->slot_size[p] = ggml_cuda_hybrid_align_up(ctx->slot_size[p], page);
-        CU_CHECK(cuMemAddressReserve(&ctx->slot_base[p], ctx->slot_size[p], page, 0, 0));
-        for (size_t slot_offset = 0; slot_offset < ctx->slot_size[p]; slot_offset += page) {
-            CUmemGenericAllocationHandle handle;
-            CU_CHECK(cuMemCreate(&handle, page, &prop, 0));
-            ggml_cuda_hybrid_map(ctx, ctx->slot_base[p] + slot_offset, page, handle, 0);
-            for (ggml_tensor_extra_hybrid * extra : ctx->tensor_extras) {
-                if (extra->remote_size == 0 || ctx->layers.at(extra->layer).parity != p ||
-                    slot_offset < extra->slot_offset ||
-                    slot_offset >= extra->slot_offset + extra->remote_size) {
-                    continue;
-                }
-                const size_t tensor_page_offset = slot_offset - extra->slot_offset;
-                ggml_cuda_hybrid_map(ctx, extra->remote_addr + tensor_page_offset, page, handle, 0);
+    if (ctx->mode == ggml_cuda_hybrid_mode::staging) {
+        // Two physical slots are each mapped once as a contiguous copy
+        // destination and then aliased into every layer of that parity at the
+        // tensor's stable address.
+        for (int p = 0; p < 2; ++p) {
+            if (ctx->slot_size[p] == 0) {
+                continue;
             }
+            ctx->slot_size[p] = ggml_cuda_hybrid_align_up(ctx->slot_size[p], page);
+            CU_CHECK(cuMemAddressReserve(&ctx->slot_base[p], ctx->slot_size[p], page, 0, 0));
+            for (size_t slot_offset = 0; slot_offset < ctx->slot_size[p]; slot_offset += page) {
+                CUmemGenericAllocationHandle handle;
+                CU_CHECK(cuMemCreate(&handle, page, &prop, 0));
+                ggml_cuda_hybrid_map(ctx, ctx->slot_base[p] + slot_offset, page, handle, 0);
+                for (ggml_tensor_extra_hybrid * extra : ctx->tensor_extras) {
+                    if (extra->remote_size == 0 || ctx->layers.at(extra->layer).parity != p ||
+                        slot_offset < extra->slot_offset ||
+                        slot_offset >= extra->slot_offset + extra->remote_size) {
+                        continue;
+                    }
+                    const size_t tensor_page_offset = slot_offset - extra->slot_offset;
+                    ggml_cuda_hybrid_map(ctx, extra->remote_addr + tensor_page_offset, page, handle, 0);
+                }
+                CU_CHECK(cuMemRelease(handle));
+            }
+        }
+
+        for (auto & entry : ctx->layers) {
+            ggml_cuda_hybrid_layer & layer = entry.second;
+            CUDA_CHECK(cudaHostAlloc((void **) &layer.host, layer.size,
+                cudaHostAllocPortable | cudaHostAllocWriteCombined));
+            memset(layer.host, 0, layer.size);
+        }
+    } else {
+#if CUDA_VERSION >= 12080
+        // Each selected tensor suffix gets unique host-NUMA physical pages at
+        // exactly the same virtual address.  The original CUDA kernels can
+        // therefore dereference one contiguous tensor pointer; only the page
+        // backing changes at the 2 MiB boundary.
+        CUmemAllocationProp host_prop = {};
+        host_prop.type = CU_MEM_ALLOCATION_TYPE_PINNED;
+        host_prop.location.type = CU_MEM_LOCATION_TYPE_HOST_NUMA;
+        host_prop.location.id = ctx->host_numa_id;
+        for (ggml_cuda_hybrid_candidate & candidate : candidates) {
+            if (candidate.selected_pages == 0) {
+                continue;
+            }
+            const size_t bytes = candidate.selected_pages * page;
+            CUmemGenericAllocationHandle handle;
+            CU_CHECK(cuMemCreate(&handle, bytes, &host_prop, 0));
+            ggml_cuda_hybrid_map(ctx, candidate.extra->remote_addr, bytes, handle, 0, true);
             CU_CHECK(cuMemRelease(handle));
         }
+#else
+        GGML_ABORT("zero-copy hybrid VMM requires CUDA toolkit 12.8 or newer");
+#endif
     }
 
-    size_t remote_bytes = 0;
-    for (auto & entry : ctx->layers) {
-        ggml_cuda_hybrid_layer & layer = entry.second;
-        CUDA_CHECK(cudaHostAlloc((void **) &layer.host, layer.size,
-            cudaHostAllocPortable | cudaHostAllocWriteCombined));
-        memset(layer.host, 0, layer.size);
-        remote_bytes += layer.size;
-    }
-
+    const size_t remote_bytes = gross_remote_pages * page;
     const size_t staging_bytes = ctx->slot_size[0] + ctx->slot_size[1];
-    const int64_t net_saved = int64_t(ctx->buffer_size) - int64_t(local_bytes) - int64_t(staging_bytes);
-    fprintf(stderr, "hybrid_vmm,buffer_mib=%.3f,remote_mib=%.3f,layers=%zu,"
-                    "local_physical_mib=%.3f,staging_mib=%.3f,net_saved_mib=%.3f,page_mib=%.3f\n",
-        ctx->buffer_size / 1048576.0, remote_bytes / 1048576.0, ctx->layers.size(),
-        local_bytes / 1048576.0, staging_bytes / 1048576.0, net_saved / 1048576.0,
-        page / 1048576.0);
+    // The reserve tail past buffer_size is part of the VMM mapping but was
+    // never model payload.  Count only selected host-backed model pages as
+    // saved; staging consumes VRAM and must be subtracted from that gross.
+    const int64_t net_saved = int64_t(remote_bytes) - int64_t(staging_bytes);
+    const size_t requested_bytes = requested_pages > std::numeric_limits<size_t>::max() / page ?
+        std::numeric_limits<size_t>::max() : requested_pages * page;
+    GGML_ASSERT(remote_bytes == gross_remote_pages * page);
+    fprintf(stderr,
+        "hybrid_vmm,mode=%s,selection=%s,requested_pages=%zu,requested_bytes=%zu,requested_mib=%.3f,"
+        "gross_pages=%zu,gross_bytes=%zu,gross_mib=%.3f,staging_bytes=%zu,staging_mib=%.3f,"
+        "net_bytes=%" PRId64 ",net_mib=%.3f,eligible_pages=%zu,selected_tensors=%zu,layers=%zu,"
+        "buffer_bytes=%zu,local_physical_bytes=%zu,page_bytes=%zu,"
+        "buffer_mib=%.3f,remote_mib=%.3f,local_physical_mib=%.3f,"
+        "net_saved_mib=%.3f,page_mib=%.3f\n",
+        ggml_cuda_hybrid_mode_name(ctx->mode),
+        ctx->page_budget_enabled ? "global_budget" : (ctx->remote_pages > 0 ? "per_tensor_pages" : "fraction"),
+        requested_pages, requested_bytes, requested_bytes / 1048576.0,
+        gross_remote_pages, remote_bytes, remote_bytes / 1048576.0,
+        staging_bytes, staging_bytes / 1048576.0,
+        net_saved, net_saved / 1048576.0, eligible_pages, selected_tensors, ctx->layers.size(),
+        ctx->buffer_size, local_bytes, page,
+        ctx->buffer_size / 1048576.0, remote_bytes / 1048576.0, local_bytes / 1048576.0,
+        net_saved / 1048576.0, page / 1048576.0);
+    if (ctx->profile.enabled) {
+        fprintf(stderr,
+            "hybrid_profile,version=1,event=config,mode=%s,profile_scope=direct_streams,"
+            "graphs=forced_off,device=%d,sample_every=%" PRIu64 ",summary_every=%" PRIu64 ","
+            "force_direct_source=profile,detail=%d,ring=%zu,remote_bytes=%zu,layers=%zu\n",
+            ggml_cuda_hybrid_mode_name(ctx->mode), ctx->device,
+            ctx->profile.sample_every, ctx->profile.summary_every,
+            ctx->profile.detail ? 1 : 0, ctx->profile.samples.size(), remote_bytes, ctx->layers.size());
+    }
+    ctx->finalized = true;
 }
 
 static void ggml_cuda_hybrid_prefetch_layer(
         ggml_backend_cuda_hybrid_buffer_context * ctx,
         ggml_cuda_hybrid_layer & layer,
         cudaStream_t main_stream) {
+    if (ctx->mode == ggml_cuda_hybrid_mode::zero_copy) {
+        return;
+    }
     const int p = layer.parity;
     if (ctx->loaded_layer[p] == layer.layer) {
         return;
+    }
+
+    int profile_sample = -1;
+    if (ctx->profile.enabled) {
+        profile_sample = ggml_cuda_hybrid_profile_begin_copy(ctx, layer, main_stream);
     }
 
     // The main->copy dependency is required both for safe slot reuse and to
@@ -1777,8 +2703,17 @@ static void ggml_cuda_hybrid_prefetch_layer(
     // copy_ready joins it back into the main stream.
     CUDA_CHECK(cudaEventRecord(ctx->copy_kick[p], main_stream));
     CUDA_CHECK(cudaStreamWaitEvent(ctx->copy_stream, ctx->copy_kick[p], 0));
+    if (profile_sample >= 0) {
+        ggml_cuda_hybrid_profile_sample & sample = ctx->profile.samples[size_t(profile_sample)];
+        CUDA_CHECK(cudaEventRecord(sample.copy_start, ctx->copy_stream));
+    }
     CUDA_CHECK(cudaMemcpyAsync(reinterpret_cast<void *>(ctx->slot_base[p]),
         layer.host, layer.size, cudaMemcpyHostToDevice, ctx->copy_stream));
+    if (profile_sample >= 0) {
+        ggml_cuda_hybrid_profile_sample & sample = ctx->profile.samples[size_t(profile_sample)];
+        CUDA_CHECK(cudaEventRecord(sample.copy_end, ctx->copy_stream));
+        sample.has_copy = true;
+    }
     CUDA_CHECK(cudaEventRecord(ctx->copy_ready[p], ctx->copy_stream));
     ctx->loaded_layer[p] = layer.layer;
 }
@@ -1786,6 +2721,14 @@ static void ggml_cuda_hybrid_prefetch_layer(
 static void ggml_cuda_hybrid_prepare_layer(
         ggml_backend_cuda_hybrid_buffer_context * ctx, int layer, cudaStream_t main_stream) {
     GGML_ASSERT(ctx != nullptr && ctx->finalized);
+    if (ctx->mode == ggml_cuda_hybrid_mode::zero_copy) {
+        auto current = ctx->layers.find(layer);
+        if (current != ctx->layers.end() && ctx->profile.enabled &&
+            ggml_cuda_hybrid_profile_note_prepare(ctx, layer)) {
+            ggml_cuda_hybrid_profile_zero_copy_touch(ctx, current->second, main_stream);
+        }
+        return;
+    }
     if (ctx->last_prepared_layer == layer) {
         return;
     }
@@ -1794,22 +2737,53 @@ static void ggml_cuda_hybrid_prepare_layer(
     if (current == ctx->layers.end()) {
         return;
     }
+    if (ctx->profile.enabled) {
+        ggml_cuda_hybrid_profile_note_prepare(ctx, layer);
+    }
     const bool already_loaded = ctx->loaded_layer[current->second.parity] == layer;
+    if (ctx->profile.enabled && already_loaded &&
+        ctx->profile.deferred_work_sample >= 0) {
+        const int deferred = ctx->profile.deferred_work_sample;
+        const ggml_cuda_hybrid_profile_sample & sample =
+            ctx->profile.samples[size_t(deferred)];
+        if (sample.in_use && sample.layer == layer) {
+            ctx->profile.last_work_sample = deferred;
+            ctx->profile.deferred_work_sample = -1;
+        }
+    }
     ggml_cuda_hybrid_prefetch_layer(ctx, current->second, main_stream);
     // Layer zero can already have been prefetched and joined by the preceding
     // graph iteration.  Waiting on its event again at graph entry while the
     // same graph records it at the tail creates a capture cycle.
     if (!already_loaded || current != ctx->layers.begin()) {
+        const int profile_sample = ctx->profile.enabled ?
+            ggml_cuda_hybrid_profile_begin_wait(ctx, current->second, main_stream) : -1;
         CUDA_CHECK(cudaStreamWaitEvent(main_stream, ctx->copy_ready[current->second.parity], 0));
+        if (ctx->profile.enabled) {
+            ggml_cuda_hybrid_profile_end_wait(
+                ctx, current->second, profile_sample, main_stream);
+        }
     }
     ctx->last_prepared_layer = layer;
 
     auto next = std::next(current);
     if (next == ctx->layers.end()) {
         next = ctx->layers.begin();
-        ctx->wrap_prefetch_pending = true;
+        // An odd number of staged layers makes the last and first layer use
+        // the same physical slot.  Prefetching across that wrap would overwrite
+        // the current layer's weights before its kernel has consumed them.  In
+        // that case the next graph launch reloads the first layer at graph
+        // entry; launches on the main stream are ordered after the preceding
+        // graph, so slot reuse is safe.  Even rings retain tail-to-head overlap.
+        if (next != current && next->second.parity != current->second.parity) {
+            ctx->wrap_prefetch_pending = true;
+        } else {
+            ctx->wrap_prefetch_pending = false;
+            return;
+        }
     }
     if (next != current) {
+        GGML_ASSERT(next->second.parity != current->second.parity);
         ggml_cuda_hybrid_prefetch_layer(ctx, next->second, main_stream);
     }
 }
@@ -1828,11 +2802,18 @@ static void ggml_cuda_hybrid_prepare_tensor(const ggml_tensor * tensor, cudaStre
 
 static void ggml_cuda_hybrid_finish_graph(
         ggml_backend_cuda_hybrid_buffer_context * ctx, cudaStream_t main_stream) {
-    if (ctx == nullptr || !ctx->wrap_prefetch_pending || ctx->layers.empty()) {
+    if (ctx == nullptr || ctx->mode == ggml_cuda_hybrid_mode::zero_copy ||
+        !ctx->wrap_prefetch_pending || ctx->layers.empty()) {
         return;
     }
     const int parity = ctx->layers.begin()->second.parity;
+    const ggml_cuda_hybrid_layer & layer = ctx->layers.begin()->second;
+    const int profile_sample = ctx->profile.enabled ?
+        ggml_cuda_hybrid_profile_begin_wait(ctx, layer, main_stream) : -1;
     CUDA_CHECK(cudaStreamWaitEvent(main_stream, ctx->copy_ready[parity], 0));
+    if (ctx->profile.enabled) {
+        ggml_cuda_hybrid_profile_end_wait(ctx, layer, profile_sample, main_stream, true);
+    }
     ctx->wrap_prefetch_pending = false;
 }
 
@@ -1881,6 +2862,30 @@ static void ggml_backend_cuda_hybrid_buffer_set_tensor(
     ggml_cuda_hybrid_finalize(ctx);
     auto * extra = static_cast<ggml_tensor_extra_hybrid *>(tensor->extra);
 
+    // zero_copy mappings have host-NUMA backing but live in the same CUDA VA
+    // range, so model loading can fill those pages directly without a
+    // persistent CPU-side shadow or a GPU staging slot.
+    if (ctx->mode == ggml_cuda_hybrid_mode::zero_copy && extra->remote_size != 0) {
+        const size_t remote_offset = size_t(extra->remote_addr -
+            reinterpret_cast<CUdeviceptr>(tensor->data));
+        const size_t suffix_offset = remote_offset + extra->remote_size;
+        if (remote_offset > 0) {
+            CUDA_CHECK(cudaMemcpyAsync(tensor->data, data, remote_offset,
+                cudaMemcpyHostToDevice, cudaStreamPerThread));
+        }
+        if (extra->remote_size > 0) {
+            memcpy(reinterpret_cast<void *>(extra->remote_addr),
+                static_cast<const char *>(data) + remote_offset, extra->remote_size);
+        }
+        if (suffix_offset < size) {
+            CUDA_CHECK(cudaMemcpyAsync(static_cast<char *>(tensor->data) + suffix_offset,
+                static_cast<const char *>(data) + suffix_offset, size - suffix_offset,
+                cudaMemcpyHostToDevice, cudaStreamPerThread));
+        }
+        CUDA_CHECK(cudaStreamSynchronize(cudaStreamPerThread));
+        return;
+    }
+
     if (extra->remote_size == 0) {
         CUDA_CHECK(cudaMemcpyAsync(tensor->data, data, size, cudaMemcpyHostToDevice, cudaStreamPerThread));
     } else {
@@ -1909,6 +2914,27 @@ static void ggml_backend_cuda_hybrid_buffer_get_tensor(
     auto * ctx = static_cast<ggml_backend_cuda_hybrid_buffer_context *>(buffer->context);
     ggml_cuda_hybrid_finalize(ctx);
     auto * extra = static_cast<ggml_tensor_extra_hybrid *>(tensor->extra);
+
+    if (ctx->mode == ggml_cuda_hybrid_mode::zero_copy && extra->remote_size != 0) {
+        const size_t remote_offset = size_t(extra->remote_addr -
+            reinterpret_cast<CUdeviceptr>(tensor->data));
+        const size_t suffix_offset = remote_offset + extra->remote_size;
+        if (remote_offset > 0) {
+            CUDA_CHECK(cudaMemcpyAsync(data, tensor->data, remote_offset,
+                cudaMemcpyDeviceToHost, cudaStreamPerThread));
+        }
+        if (extra->remote_size > 0) {
+            memcpy(static_cast<char *>(data) + remote_offset,
+                reinterpret_cast<const void *>(extra->remote_addr), extra->remote_size);
+        }
+        if (suffix_offset < size) {
+            CUDA_CHECK(cudaMemcpyAsync(static_cast<char *>(data) + suffix_offset,
+                static_cast<const char *>(tensor->data) + suffix_offset, size - suffix_offset,
+                cudaMemcpyDeviceToHost, cudaStreamPerThread));
+        }
+        CUDA_CHECK(cudaStreamSynchronize(cudaStreamPerThread));
+        return;
+    }
 
     if (extra->remote_size == 0) {
         CUDA_CHECK(cudaMemcpyAsync(data, tensor->data, size, cudaMemcpyDeviceToHost, cudaStreamPerThread));
@@ -1955,7 +2981,8 @@ static ggml_backend_buffer_t ggml_backend_cuda_hybrid_buffer_type_alloc_buffer(
         ggml_backend_buffer_type_t buft, size_t size) {
     auto * buft_ctx = static_cast<ggml_backend_cuda_hybrid_buffer_type_context *>(buft->context);
     auto * ctx = new ggml_backend_cuda_hybrid_buffer_context{
-        buft_ctx->device, buft_ctx->remote_fraction, buft_ctx->remote_pages, size,
+        buft_ctx->device, buft_ctx->mode, buft_ctx->remote_fraction, buft_ctx->remote_pages,
+        buft_ctx->page_budget_enabled, buft_ctx->page_budget, size,
     };
     return ggml_backend_buffer_init(buft, ggml_backend_cuda_hybrid_buffer_interface, ctx, size);
 }
@@ -1994,21 +3021,54 @@ static const ggml_backend_buffer_type_i ggml_backend_cuda_hybrid_buffer_type_int
 static ggml_backend_buffer_type_t ggml_backend_cuda_hybrid_buffer_type() {
     static std::mutex mutex;
     std::lock_guard<std::mutex> lock(mutex);
-    static std::map<int, ggml_backend_buffer_type> buft_map;
+    static std::map<std::string, ggml_backend_buffer_type> buft_map;
 
     const char * value = getenv("GGML_CUDA_HYBRID_FRACTION");
     const float fraction = std::max(0.000001f, std::min(0.95f,
         value != nullptr ? std::strtof(value, nullptr) : 0.01f));
     const char * pages_value = getenv("GGML_CUDA_HYBRID_PAGES");
     const int remote_pages = pages_value != nullptr ? std::max(0, atoi(pages_value)) : 0;
-    const int key = int(std::lround(fraction * 1000000.0f)) ^ (remote_pages << 20);
+    const char * budget_value = getenv("GGML_CUDA_HYBRID_PAGE_BUDGET");
+    const bool page_budget_enabled = budget_value != nullptr;
+    size_t page_budget = 0;
+    if (page_budget_enabled) {
+        if (*budget_value == '\0') {
+            GGML_ABORT("GGML_CUDA_HYBRID_PAGE_BUDGET must be a non-negative integer");
+        }
+        for (const char * p = budget_value; *p != '\0'; ++p) {
+            if (*p < '0' || *p > '9') {
+                GGML_ABORT("invalid GGML_CUDA_HYBRID_PAGE_BUDGET: '%s'", budget_value);
+            }
+        }
+        char * end = nullptr;
+        const unsigned long long parsed = strtoull(budget_value, &end, 10);
+        if (end == budget_value || *end != '\0' || parsed > std::numeric_limits<size_t>::max()) {
+            GGML_ABORT("invalid GGML_CUDA_HYBRID_PAGE_BUDGET: '%s'", budget_value);
+        }
+        page_budget = size_t(parsed);
+    }
+    ggml_cuda_hybrid_mode mode = ggml_cuda_hybrid_mode::staging;
+    const char * mode_value = getenv("GGML_CUDA_HYBRID_MODE");
+    if (mode_value != nullptr) {
+        if (strcmp(mode_value, "staging") == 0) {
+            mode = ggml_cuda_hybrid_mode::staging;
+        } else if (strcmp(mode_value, "zero_copy") == 0) {
+            mode = ggml_cuda_hybrid_mode::zero_copy;
+        } else {
+            GGML_ABORT("invalid GGML_CUDA_HYBRID_MODE: '%s' (expected staging or zero_copy)", mode_value);
+        }
+    }
+    const std::string key = std::string(ggml_cuda_hybrid_mode_name(mode)) + ":" +
+        std::to_string(int(std::lround(fraction * 1000000.0f))) + ":" +
+        std::to_string(remote_pages) + ":" + (page_budget_enabled ? "1:" : "0:") +
+        std::to_string(page_budget);
     auto it = buft_map.find(key);
     if (it != buft_map.end()) {
         return &it->second;
     }
 
     auto * ctx = new ggml_backend_cuda_hybrid_buffer_type_context{
-        0, fraction, remote_pages, GGML_CUDA_NAME "_Hybrid",
+        0, mode, fraction, remote_pages, page_budget_enabled, page_budget, GGML_CUDA_NAME "_Hybrid",
     };
     ggml_backend_buffer_type buft {
         /* .iface   = */ ggml_backend_cuda_hybrid_buffer_type_interface,
@@ -3906,6 +4966,25 @@ static void ggml_backend_cuda_synchronize(ggml_backend_t backend) {
 static bool ggml_cuda_graph_check_compability(ggml_cgraph * cgraph) {
 
     bool use_cuda_graph = true;
+    static const bool hybrid_profile_requested =
+        ggml_cuda_hybrid_profile_env_enabled("GGML_CUDA_HYBRID_PROFILE");
+    static const bool hybrid_force_direct_requested =
+        hybrid_profile_requested ||
+        ggml_cuda_hybrid_profile_env_enabled("GGML_CUDA_HYBRID_FORCE_DIRECT");
+    if (hybrid_force_direct_requested) {
+        for (int i = 0; i < cgraph->n_nodes; ++i) {
+            for (int j = 0; j < GGML_MAX_SRC; ++j) {
+                const ggml_tensor * src = cgraph->nodes[i]->src[j];
+                if (src != nullptr && src->buffer != nullptr &&
+                    ggml_backend_buft_is_cuda_hybrid(src->buffer->buft)) {
+#ifndef NDEBUG
+                    GGML_LOG_DEBUG("%s: disabling CUDA graphs for Hybrid direct-stream run\n", __func__);
+#endif
+                    return false;
+                }
+            }
+        }
+    }
     // Loop over nodes in GGML graph to obtain info needed for CUDA graph
 
     for (int i = 0; i < cgraph->n_nodes; i++) {
@@ -4914,6 +5993,7 @@ static void ggml_cuda_graph_evaluate_and_capture(ggml_backend_cuda_context * cud
             }
         }
     }
+    ggml_cuda_hybrid_profile_note_eval(hybrid_ctx, use_cuda_graph, cuda_ctx->stream());
 
     const auto try_launch_concurrent_event = [&](const ggml_tensor * node) {
         if (stream_ctx.concurrent_events.find(node) != stream_ctx.concurrent_events.end()) {
@@ -5104,6 +6184,10 @@ static void ggml_cuda_graph_evaluate_and_capture(ggml_backend_cuda_context * cud
             // after the output work so the next graph iteration can consume it
             // without a graph-entry event dependency.
             ggml_cuda_hybrid_finish_graph(hybrid_ctx, cuda_ctx->stream());
+            if (hybrid_ctx != nullptr && hybrid_ctx->profile.enabled) {
+                ggml_cuda_hybrid_profile_close_work(hybrid_ctx, cuda_ctx->stream());
+                ggml_cuda_hybrid_profile_drain(hybrid_ctx, false);
+            }
 
         }
 

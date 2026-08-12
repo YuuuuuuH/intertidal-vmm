@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "experiment_id": "gemma4-31b-q8-populated-context-rtx5090-2026-08-12",
+  "remote": {
+    "transport": "ssh",
+    "target": "wici@192.168.1.182",
+    "gpu_id": 0,
+    "ssh_options": [
+      "-S",
+      "/tmp/intertidal-5090-resumed.sock",
+      "-o",
+      "BatchMode=yes"
+    ]
+  },
+  "paths": {
+    "model": "/home/wici/gemma-4-31B-it-Q8_0.gguf",
+    "hybrid_bench": "/home/wici/llama.cpp/build-cuda/bin/llama-bench",
+    "native_bench": "/home/wici/llama.cpp/build-cuda/bin/llama-bench"
+  },
+  "model": {
+    "offload_basis": "eligible_tensor_bytes",
+    "page_bytes": 2097152,
+    "gpu_layers": 61,
+    "expected_context_length": 262144,
+    "hybrid_override": "^blk[.][0-9]+[.](attn_(k|v|q|output)|ffn_(down|gate|up))[.]weight$=CUDA_Hybrid"
+  },
+  "download": {
+    "minimum_bytes": 25000000000,
+    "planning_file_bytes": 31300000000,
+    "planning_eligible_tensor_bytes": 30600000000,
+    "planning_tensor_count": 1000,
+    "stable_polls": 3,
+    "poll_interval_s": 20,
+    "timeout_s": 86400,
+    "hash_timeout_s": 3600
+  },
+  "benchmark": {
+    "threads": 8,
+    "batch": 32,
+    "ubatch": 32,
+    "flash_attention": "on",
+    "cache_type_k": "f16",
+    "cache_type_v": "f16",
+    "mmap": true,
+    "extra_args": [],
+    "profiles": {
+      "screen": {
+        "generation": 16,
+        "repetitions": 1
+      },
+      "confirm": {
+        "generation": 64,
+        "repetitions": 3
+      }
+    }
+  },
+  "context": {
+    "quantum_tokens": 256,
+    "minimum_context_tokens": 256,
+    "coarse_step_tokens": 4096,
+    "fine_step_tokens": 256,
+    "maximum_context_tokens": 262144
+  },
+  "sweep": {
+    "phases": [
+      "direct_load",
+      "staging_coarse",
+      "alternate_coarse",
+      "fine_0_1pp"
+    ],
+    "fine_schemes": [
+      "intertidal_dma",
+      "cuda_zero_copy"
+    ],
+    "coarse_start_pp": 0.0,
+    "coarse_step_pp": 1.0,
+    "dense_step_pp": 0.1,
+    "max_offload_pp": 95.0,
+    "stop_retention": 0.1,
+    "stop_consecutive": 2,
+    "direct_probe_expected": "ok",
+    "valid_context_create_failure_is_oom": true,
+    "native_ngl_start": 61,
+    "native_ngl_stop": 0,
+    "telemetry_interval_s": 0.05,
+    "case_timeout_s": 7200
+  },
+  "profiling": {
+    "enabled": false,
+    "mode": "light",
+    "light_interval_s": 1.0,
+    "deep_interval_s": 0.2,
+    "force_direct": false,
+    "light_pcie_dmon": false,
+    "deep_pcie_dmon": true,
+    "raw_sidecar": false,
+    "backend_enabled": true,
+    "backend_sample_every": 16,
+    "backend_summary_every": 128,
+    "backend_ring": 1024,
+    "backend_detail": true
+  },
+  "environment": {
+    "LD_LIBRARY_PATH": "/dev/shm/intertidal-capacity.mEP47j:/home/wici/llama.cpp/build-cuda/bin:/usr/local/cuda/lib64"
+  }
+}

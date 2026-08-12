@@ -37,7 +37,10 @@
 
 // utils
 static uint64_t get_time_ns() {
-    using clock = std::chrono::high_resolution_clock;
+    // Benchmark elapsed time must be monotonic.  high_resolution_clock is an
+    // alias of system_clock on some standard libraries and can jump when the
+    // wall clock is adjusted.
+    using clock = std::chrono::steady_clock;
     return std::chrono::nanoseconds(clock::now().time_since_epoch()).count();
 }
 
@@ -328,6 +331,7 @@ struct cmd_params {
     std::vector<int>                 n_gen;
     std::vector<std::pair<int, int>> n_pg;
     std::vector<int>                 n_depth;
+    std::vector<uint32_t>            n_ctx;
     std::vector<int>                 n_batch;
     std::vector<int>                 n_ubatch;
     std::vector<ggml_type>           type_k;
@@ -373,6 +377,7 @@ static const cmd_params cmd_params_defaults = {
     /* n_gen                */ { 128 },
     /* n_pg                 */ {},
     /* n_depth              */ { 0 },
+    /* n_ctx                */ { 0 },
     /* n_batch              */ { 2048 },
     /* n_ubatch             */ { 512 },
     /* type_k               */ { GGML_TYPE_F16 },
@@ -445,6 +450,8 @@ static void print_usage(int /* argc */, char ** argv) {
     printf("  -n, --n-gen <n>                             (default: %s)\n", join(cmd_params_defaults.n_gen, ",").c_str());
     printf("  -pg <pp,tg>                                 (default: %s)\n", join(transform_to_str(cmd_params_defaults.n_pg, pair_str), ",").c_str());
     printf("  -d, --n-depth <n>                           (default: %s)\n", join(cmd_params_defaults.n_depth, ",").c_str());
+    printf("  --ctx-size, --alloc-ctx <n>                 reserve KV context for at least n tokens without filling it\n");
+    printf("                                              (0: size from test tokens; default: %s)\n", join(cmd_params_defaults.n_ctx, ",").c_str());
     printf("  -b, --batch-size <n>                        (default: %s)\n", join(cmd_params_defaults.n_batch, ",").c_str());
     printf("  -ub, --ubatch-size <n>                      (default: %s)\n", join(cmd_params_defaults.n_ubatch, ",").c_str());
     printf("  -ctk, --cache-type-k <t>                    (default: %s)\n", join(transform_to_str(cmd_params_defaults.type_k, ggml_type_name), ",").c_str());
@@ -596,6 +603,13 @@ static cmd_params parse_cmd_params(int argc, char ** argv) {
                 }
                 auto p = parse_int_range(argv[i]);
                 params.n_depth.insert(params.n_depth.end(), p.begin(), p.end());
+            } else if (arg == "--ctx-size" || arg == "--alloc-ctx") {
+                if (++i >= argc) {
+                    invalid_param = true;
+                    break;
+                }
+                auto p = parse_int_range(argv[i]);
+                params.n_ctx.insert(params.n_ctx.end(), p.begin(), p.end());
             } else if (arg == "-b" || arg == "--batch-size") {
                 if (++i >= argc) {
                     invalid_param = true;
@@ -1083,6 +1097,9 @@ static cmd_params parse_cmd_params(int argc, char ** argv) {
     if (params.n_depth.empty()) {
         params.n_depth = cmd_params_defaults.n_depth;
     }
+    if (params.n_ctx.empty()) {
+        params.n_ctx = cmd_params_defaults.n_ctx;
+    }
     if (params.n_batch.empty()) {
         params.n_batch = cmd_params_defaults.n_batch;
     }
@@ -1164,6 +1181,7 @@ struct cmd_params_instance {
     int                n_prompt;
     int                n_gen;
     int                n_depth;
+    uint32_t           n_ctx;
     int                n_batch;
     int                n_ubatch;
     ggml_type          type_k;
@@ -1188,6 +1206,11 @@ struct cmd_params_instance {
     bool               no_host;
     size_t             fit_target;
     uint32_t           fit_min_ctx;
+
+    uint32_t effective_n_ctx() const {
+        const uint32_t test_ctx = n_prompt + n_gen + n_depth;
+        return std::max(n_ctx, test_ctx);
+    }
 
     llama_model_params to_llama_mparams() const {
         llama_model_params mparams = llama_model_default_params();
@@ -1255,7 +1278,10 @@ struct cmd_params_instance {
     llama_context_params to_llama_cparams() const {
         llama_context_params cparams = llama_context_default_params();
 
-        cparams.n_ctx           = n_prompt + n_gen + n_depth;
+        // n_ctx reserves KV capacity only. The benchmark still processes exactly
+        // n_prompt + n_gen (+ optional n_depth) tokens and does not populate the
+        // unused cache or create a state snapshot for it.
+        cparams.n_ctx           = effective_n_ctx();
         cparams.n_batch         = n_batch;
         cparams.n_ubatch        = n_ubatch;
         cparams.type_k          = type_k;
@@ -1300,6 +1326,7 @@ static std::vector<cmd_params_instance> get_cmd_params_instances(const cmd_param
     for (const auto & cm : params.cpu_mask)
     for (const auto & cs : params.cpu_strict)
     for (const auto & nd : params.n_depth)
+    for (const auto & nctx : params.n_ctx)
     for (const auto & pl : params.poll) {
         for (const auto & n_prompt : params.n_prompt) {
             if (n_prompt == 0) {
@@ -1310,6 +1337,7 @@ static std::vector<cmd_params_instance> get_cmd_params_instances(const cmd_param
                 /* .n_prompt     = */ n_prompt,
                 /* .n_gen        = */ 0,
                 /* .n_depth      = */ nd,
+                /* .n_ctx        = */ nctx,
                 /* .n_batch      = */ nb,
                 /* .n_ubatch     = */ nub,
                 /* .type_k       = */ tk,
@@ -1347,6 +1375,7 @@ static std::vector<cmd_params_instance> get_cmd_params_instances(const cmd_param
                 /* .n_prompt     = */ 0,
                 /* .n_gen        = */ n_gen,
                 /* .n_depth      = */ nd,
+                /* .n_ctx        = */ nctx,
                 /* .n_batch      = */ nb,
                 /* .n_ubatch     = */ nub,
                 /* .type_k       = */ tk,
@@ -1384,6 +1413,7 @@ static std::vector<cmd_params_instance> get_cmd_params_instances(const cmd_param
                 /* .n_prompt     = */ n_pg.first,
                 /* .n_gen        = */ n_pg.second,
                 /* .n_depth      = */ nd,
+                /* .n_ctx        = */ nctx,
                 /* .n_batch      = */ nb,
                 /* .n_ubatch     = */ nub,
                 /* .type_k       = */ tk,
@@ -1450,6 +1480,7 @@ struct test {
     bool                     no_host;
     size_t                   fit_target;
     uint32_t                 fit_min_ctx;
+    uint32_t                 n_ctx;
     int                      n_prompt;
     int                      n_gen;
     int                      n_depth;
@@ -1490,6 +1521,7 @@ struct test {
         no_host        = inst.no_host;
         fit_target     = inst.fit_target;
         fit_min_ctx    = inst.fit_min_ctx;
+        n_ctx          = llama_n_ctx(ctx);
         n_prompt       = inst.n_prompt;
         n_gen          = inst.n_gen;
         n_depth        = inst.n_depth;
@@ -1498,7 +1530,6 @@ struct test {
         std::strftime(buf, sizeof(buf), "%FT%TZ", gmtime(&t));
         test_time = buf;
 
-        (void) ctx;
     }
 
     uint64_t avg_ns() const { return ::avg(samples_ns); }
@@ -1548,7 +1579,7 @@ struct test {
             "main_gpu",       "no_kv_offload",  "flash_attn",    "devices",        "tensor_split",
             "tensor_buft_overrides",            "use_mmap",      "use_direct_io",  "embeddings",
             "no_op_offload",  "no_host",        "fit_target",     "fit_min_ctx",
-            "n_prompt",       "n_gen",          "n_depth",
+            "n_ctx",          "n_prompt",       "n_gen",          "n_depth",
             "test_time",      "avg_ns",         "stddev_ns",     "avg_ts",         "stddev_ts"
         };
         return fields;
@@ -1559,7 +1590,7 @@ struct test {
     static field_type get_field_type(const std::string & field) {
         if (field == "build_number" || field == "n_batch" || field == "n_ubatch" || field == "n_threads" ||
             field == "poll" || field == "model_size" || field == "model_n_params" || field == "n_gpu_layers" ||
-            field == "main_gpu" || field == "n_prompt" || field == "n_gen" || field == "n_depth" || field == "avg_ns" ||
+            field == "main_gpu" || field == "n_ctx" || field == "n_prompt" || field == "n_gen" || field == "n_depth" || field == "avg_ns" ||
             field == "stddev_ns" || field == "no_op_offload" || field == "n_cpu_moe" ||
             field == "fit_target" || field == "fit_min_ctx" || field == "flash_attn") {
             return INT;
@@ -1644,6 +1675,7 @@ struct test {
                                             std::to_string(no_host),
                                             std::to_string(fit_target),
                                             std::to_string(fit_min_ctx),
+                                            std::to_string(n_ctx),
                                             std::to_string(n_prompt),
                                             std::to_string(n_gen),
                                             std::to_string(n_depth),
@@ -1893,6 +1925,9 @@ struct markdown_printer : public printer {
         if (field == "fit_min_ctx") {
             return "fitc";
         }
+        if (field == "n_ctx") {
+            return "ctx";
+        }
         return field;
     }
 
@@ -1976,6 +2011,9 @@ struct markdown_printer : public printer {
         }
         if (params.fit_params_min_ctx.size() > 1 || params.fit_params_min_ctx != cmd_params_defaults.fit_params_min_ctx) {
             fields.emplace_back("fit_min_ctx");
+        }
+        if (params.n_ctx.size() > 1 || params.n_ctx != cmd_params_defaults.n_ctx) {
+            fields.emplace_back("n_ctx");
         }
         fields.emplace_back("test");
         fields.emplace_back("t/s");
@@ -2111,7 +2149,9 @@ static void maybe_print_logit_checksum(llama_context * ctx, const char * label) 
     const int32_t n_vocab = llama_vocab_n_tokens(vocab);
     const float * logits = llama_get_logits_ith(ctx, -1);
     uint64_t hash = 1469598103934665603ULL;
+    size_t nonfinite = 0;
     for (int32_t i = 0; i < n_vocab; ++i) {
+        nonfinite += !std::isfinite(logits[i]);
         uint32_t bits;
         std::memcpy(&bits, logits + i, sizeof(bits));
         for (int byte = 0; byte < 4; ++byte) {
@@ -2120,7 +2160,8 @@ static void maybe_print_logit_checksum(llama_context * ctx, const char * label) 
         }
     }
     if (checksum_env != nullptr) {
-        std::fprintf(stderr, "logit_checksum,%s,%016" PRIx64 "\n", label, hash);
+        std::fprintf(stderr, "logit_checksum,%s,%016" PRIx64 ",nonfinite=%zu\n",
+            label, hash, nonfinite);
     }
     if (dump_path != nullptr) {
         FILE * file = std::fopen(dump_path, "ab");
@@ -2312,8 +2353,7 @@ int llama_bench(int argc, char ** argv) {
 
             std::vector<size_t> margins(llama_max_devices(), inst.fit_target * 1024 * 1024);
 
-            uint32_t n_ctx_needed = inst.n_prompt + inst.n_gen + inst.n_depth;
-            cparams.n_ctx = std::max(cparams.n_ctx, n_ctx_needed);
+            cparams.n_ctx = inst.effective_n_ctx();
 
             common_fit_params(inst.model.c_str(), &mparams, &cparams,
                 fit_tensor_split.data(),
@@ -2450,26 +2490,36 @@ int llama_bench(int argc, char ** argv) {
                     fprintf(stderr, "llama-bench: benchmark %d/%zu: prompt run %d/%d\n", params_idx, params_count,
                             i + 1, params.reps);
                 }
+                const uint64_t phase_start_ns = get_time_ns();
                 bool res = test_prompt(ctx, t.n_prompt, t.n_batch, t.n_threads);
+                const uint64_t phase_ns = get_time_ns() - phase_start_ns;
                 if (!res) {
                     fprintf(stderr, "%s: error: failed to run prompt\n", __func__);
                     llama_free(ctx);
                     llama_model_free(lmodel);
                     exit(1);
                 }
+                std::fprintf(stderr,
+                        "llama_bench_phase_timing,phase=prompt,rep=%d,tokens=%d,ns=%" PRIu64 "\n",
+                        i + 1, t.n_prompt, phase_ns);
             }
             if (t.n_gen > 0) {
                 if (params.progress) {
                     fprintf(stderr, "llama-bench: benchmark %d/%zu: generation run %d/%d\n", params_idx, params_count,
                             i + 1, params.reps);
                 }
+                const uint64_t phase_start_ns = get_time_ns();
                 bool res = test_gen(ctx, t.n_gen, t.n_threads);
+                const uint64_t phase_ns = get_time_ns() - phase_start_ns;
                 if (!res) {
                     fprintf(stderr, "%s: error: failed to run gen\n", __func__);
                     llama_free(ctx);
                     llama_model_free(lmodel);
                     exit(1);
                 }
+                std::fprintf(stderr,
+                        "llama_bench_phase_timing,phase=decode,rep=%d,tokens=%d,ns=%" PRIu64 "\n",
+                        i + 1, t.n_gen, phase_ns);
             }
 
             uint64_t t_ns = get_time_ns() - t_start;

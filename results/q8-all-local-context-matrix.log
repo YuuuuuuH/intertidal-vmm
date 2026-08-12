@@ -1,0 +1,43 @@
+2 MiB, 32109 MiB
+q8_alllocal_matrix,start,ctx=520,b=512,ub=512,prompt=512
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 32109 MiB):
+  Device 0: NVIDIA GeForce RTX 5090, compute capability 12.0, VMM: yes, VRAM: 32109 MiB
+llama_bench: error: failed to create context with model '/home/wici/gemma-4-31B-it-Q8_0.gguf'
+[
+q8_alllocal_matrix,end,ctx=520,b=512,ub=512,rc=1
+q8_alllocal_matrix,start,ctx=520,b=256,ub=256,prompt=512
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 32109 MiB):
+  Device 0: NVIDIA GeForce RTX 5090, compute capability 12.0, VMM: yes, VRAM: 32109 MiB
+llama_bench: error: failed to create context with model '/home/wici/gemma-4-31B-it-Q8_0.gguf'
+[
+q8_alllocal_matrix,end,ctx=520,b=256,ub=256,rc=1
+q8_alllocal_matrix,start,ctx=520,b=128,ub=128,prompt=512
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 32109 MiB):
+  Device 0: NVIDIA GeForce RTX 5090, compute capability 12.0, VMM: yes, VRAM: 32109 MiB
+llama_bench: error: failed to create context with model '/home/wici/gemma-4-31B-it-Q8_0.gguf'
+[
+q8_alllocal_matrix,end,ctx=520,b=128,ub=128,rc=1
+q8_alllocal_matrix,start,ctx=520,b=64,ub=64,prompt=512
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 32109 MiB):
+  Device 0: NVIDIA GeForce RTX 5090, compute capability 12.0, VMM: yes, VRAM: 32109 MiB
+llama_bench: error: failed to create context with model '/home/wici/gemma-4-31B-it-Q8_0.gguf'
+[
+q8_alllocal_matrix,end,ctx=520,b=64,ub=64,rc=1
+q8_alllocal_matrix,start,ctx=1024,b=128,ub=128,prompt=1016
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 32109 MiB):
+  Device 0: NVIDIA GeForce RTX 5090, compute capability 12.0, VMM: yes, VRAM: 32109 MiB
+llama_bench: error: failed to create context with model '/home/wici/gemma-4-31B-it-Q8_0.gguf'
+[
+q8_alllocal_matrix,end,ctx=1024,b=128,ub=128,rc=1
+q8_alllocal_matrix,start,ctx=4096,b=128,ub=128,prompt=4088
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 32109 MiB):
+  Device 0: NVIDIA GeForce RTX 5090, compute capability 12.0, VMM: yes, VRAM: 32109 MiB
+llama_bench: error: failed to create context with model '/home/wici/gemma-4-31B-it-Q8_0.gguf'
+[
+q8_alllocal_matrix,end,ctx=4096,b=128,ub=128,rc=1
+q8_alllocal_matrix,start,ctx=4096,b=64,ub=64,prompt=4088
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 32109 MiB):
+  Device 0: NVIDIA GeForce RTX 5090, compute capability 12.0, VMM: yes, VRAM: 32109 MiB
+llama_bench: error: failed to create context with model '/home/wici/gemma-4-31B-it-Q8_0.gguf'
+[
+q8_alllocal_matrix,end,ctx=4096,b=64,ub=64,rc=1

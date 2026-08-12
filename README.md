@@ -2,12 +2,14 @@
 
 Measured on the RTX 5090 test host on 2026-08-11 and 2026-08-12.
 
-## Final result: VMM double-buffer staging
+## Validated VMM double-buffer staging point
 
-The implementation target has been met on the RTX 5090 with Gemma-4-31B
-Q4_0.  The final path is not the early row-split prototype described later in
-this document.  It uses CUDA VMM to give every weight tensor a stable,
-contiguous virtual address:
+The VMM path has passed correctness and low-offload performance validation on
+the RTX 5090 with Gemma-4-31B Q4_0.  This historical measurement is a
+fixed-workload performance point, not yet the final 31--34 GiB capacity-frontier
+result.  The path is not the early row-split prototype described later in this
+document.  It uses CUDA VMM to give every weight tensor a stable, contiguous
+virtual address:
 
 - ordinary pages map to private VRAM;
 - selected complete 2 MiB pages alias one of two physical staging slots;
@@ -20,8 +22,8 @@ There is no special remote matrix kernel and no output merge.  The original
 kernel dereferences the original tensor pointer after the staging physical
 pages have been filled.
 
-Final strict capacity point, 10 repetitions, `pp512`, `tg64`, `ubatch=512`,
-Flash Attention on:
+Validated point, 10 repetitions, `pp512`, `tg64`, `ubatch=512`, Flash
+Attention on:
 
 | Case | Prefill tok/s | Decode tok/s | Retention | Net VRAM released |
 | --- | ---: | ---: | ---: | ---: |
@@ -31,16 +33,28 @@ Flash Attention on:
 The staged layout was 532 MiB of remote weight pages across all 60 layers and
 only 18 MiB of physical staging VRAM.  Including VMM end-page rounding, the
 measured net saving was 513.083 MiB out of a 16.133 GiB model, or 3.1058% of
-the logical weight footprint.  The corresponding capacity multiplier is
-`1 / (1 - 0.031058) = 1.03205`, so a 32 GiB local budget becomes 33.026 GiB.
-This is strictly above the 32-to-33 GiB target while both prefill and decode
-remain above 95%.
+the model-weight footprint.  Prefill and decode retained 96.82% and 96.72% at
+this point.  The saving is additive for fixed Gemma plus KV cache: it releases
+513.083 MiB for additional KV or other allocations.  It must not be treated as
+a percentage multiplier on the entire GPU working set, and this point by
+itself does not establish a 32-to-33 GiB fixed-model capacity result.
 
-The all-local VMM control reached 76.27 decode tok/s versus 75.48 for the
-original allocator, showing that stable virtual addressing and the original
-compute kernels add no measurable decode tax.  Prefill on this host has large
-run-to-run thermal/clock variance; the reported H2D point uses the later,
-higher original baseline as the conservative denominator.
+The distinction is important: the card's physical framebuffer remains the
+32,607 MiB total reported by `nvidia-smi` (about 31.84 GiB), and
+`nvidia-smi` will never show 33 GiB or more allocated on this card.  A reported
+logical all-local-equivalent working set is instead calculated per run as
+`measured hybrid process GPU peak + measured net VRAM saving`.  Remote weight
+bytes reside in system RAM.  A valid over-physical capacity proof therefore
+requires the hybrid run to succeed while an identical-context all-local run
+fails; it is not an increase in physical framebuffer size.
+
+The historical all-local VMM control reached 76.27 decode tok/s versus 75.48
+for the original allocator, showing that stable virtual addressing and the
+original compute kernels add no measurable decode tax.  Prefill on this host
+has large run-to-run thermal/clock variance; this H2D point uses the later,
+higher original baseline as the conservative denominator.  The resumable
+fixed-model sweep below is the authoritative source for the capacity
+conclusion once it is complete.
 
 Correctness was checked after the 532 MiB run.  The complete prompt/decode
 logit dumps were byte-identical to all-VRAM and had the same SHA-256:
@@ -66,12 +80,20 @@ Artifacts:
 
 - `intertidal-vmm.patch`: patch against llama.cpp commit `b820cc8`.
 - `ggml-cuda-hostmapped.cu`: complete experimental CUDA source.
+- `llama-bench-host.cpp`: complete benchmark source, including an independent
+  `--ctx-size` KV-reservation control.
 - `gemma_vmm_bench.py`: balanced page selector and three-case runner.
 - `vmm-ring2-final-266-r10.json`: final 266-page measurements.
 - `vmm-final-original-post-r10.json`: post-run all-VRAM control.
 - `vmm-final-local-r10.json`: all-local VMM control.
 - `vmm-hybrid-266.err`: layout and final correctness checksums.
 - `intertidal-audit.txt`: independent VRAM, CUDA Graph, and 64-token audit.
+- `PROFILING.md`: PCIe/DMA latency, workload, observer-control, calibration,
+  and Nsight diagnosis runbook.
+- `pcie_h2d_calibrate.cu`: matched-size pinned-H2D latency and bandwidth
+  calibration used to convert measured DMA GB/s into PCIe utilization.
+- `analyze_profile.py`: local JSONL-to-CSV/Markdown/SVG diagnosis report with
+  per-layer mixed-size PCIe-utilization accounting.
 
 The login environment on the test host globally set an unrelated
 `LD_PRELOAD=...libvramctl_preload.so`.  Formal results explicitly removed it;
@@ -90,13 +112,17 @@ Python GGUF import.
 - Gemma-4-31B Q4_0 (16.13 GiB) decode: 71.84 tok/s, or about 1.24 TB/s of
   effective model-weight traffic
 
-The useful equations are:
+The bandwidth-only equations are:
 
 ```text
 optimal remote fraction of total weights = B_pcie / (B_gpu + B_pcie)
-no-loss effective capacity               = V_local * (1 + B_pcie / B_gpu)
+ideal extra remote weight bytes          = W_local * B_pcie / B_gpu
 remote-bound relative throughput         = B_pcie / (remote_fraction * B_gpu)
 ```
+
+The middle expression is only a bandwidth model for scalable weight bytes.  It
+is not the accounting rule for this fixed Gemma model with a growing KV cache.
+Fixed-model capacity gain is the measured net VRAM saving in bytes.
 
 On this 5090, the DMA-staged optimum is only about 2.8% for the synthetic scan
 and about 3.8% for the real Q4 decode. It is therefore a useful worst-case
@@ -195,6 +221,13 @@ git apply /path/to/intertidal-vmm.patch
 cmake -S . -B build-intertidal -DGGML_CUDA=ON -DCMAKE_BUILD_TYPE=Release
 cmake --build build-intertidal --target llama-bench -j
 
+# Keep the same 2 MiB page budget but switch the remote backing transport.
+# staging is the default; zero_copy directly maps pinned host-NUMA pages at
+# the original tensor virtual addresses and performs no H2D prefetch/staging.
+export GGML_CUDA_HYBRID_MODE=staging
+# export GGML_CUDA_HYBRID_MODE=zero_copy
+export GGML_CUDA_HYBRID_PAGE_BUDGET=266
+
 PYTHONPATH=$PWD/gguf-py env -u LD_PRELOAD python3 gemma_vmm_bench.py \
   --model /path/to/gemma-4-31B-it-Q4_0.gguf \
   --bench $PWD/build-intertidal/bin/llama-bench \
@@ -214,3 +247,84 @@ follows:
 ./striping_bench --write-combined
 ./striping_bench --staged
 ```
+
+## Fixed-model capacity sweep
+
+`gemma_capacity_sweep.py` is the resumable local orchestrator for the full
+Gemma-4 experiment.  It keeps the model fixed, reserves KV capacity with
+`--ctx-size`, and compares VMM DMA staging, VMM CUDA host zero-copy, and native
+whole-layer `-ngl` CPU offload.
+
+The plan has two deliberately separate phases:
+
+- `pure_curve` runs one complete 1.0-percentage-point pilot followed by the
+  0.1-point dense curve at the 31 GiB working set, stopping after two
+  consecutive points at or below 10% of the initial prefill or decode speed;
+- `capacity_frontier` visits the 31.0--34.0 GiB KV working-set grid and starts
+  at the theoretical gross-offload lower bound.  It advances in 0.1-point
+  steps through OOM or insufficient-net-saving cases, then records the first
+  fit and one following confirmation point.  An all-local control at the exact
+  context records the expected OOM before an over-capacity search jumps to its
+  rigorous lower bound.  Native offload analogously finds the smallest number
+  of CPU layers rather than rerunning a full curve.  A successful native run
+  counts as a frontier only when its process-peak reduction covers the required
+  capacity: the reduction uses a measured same-context `-ngl 61` peak when it
+  fits, or an explicitly labelled calibrated/inferred all-local peak when the
+  all-local allocation is above physical VRAM.  Native CPU buffer size is
+  retained as loader diagnostics and is never reported as gross remote bytes.
+
+Copy and edit `capacity-sweep-manifest.example.json`, then inspect the complete
+adaptive plan without opening SSH:
+
+```bash
+python3 gemma_capacity_sweep.py \
+  --manifest capacity-sweep-manifest.json \
+  --output results/gemma-capacity-sweep.csv \
+  --dry-run
+```
+
+Remove `--dry-run` to execute.  Each benchmark's stdout/stderr is streamed
+directly over SSH, parsed locally, and appended to the resumable CSV together
+with OOM status, realized page/net-byte accounting, process/device peak VRAM,
+graphics clocks, temperature, power, and utilization.  The wrapper creates no
+remote result or log file.  Password-only SSH should first establish a local
+ControlMaster connection (or use an SSH key), because wrapper stdin carries
+the script itself.
+
+Correctness is a mandatory per-case gate by default.  The benchmark emits one
+ordered checksum and a non-finite-logit count after every warmup and measured
+prompt/decode pass.  With five repetitions and warmup enabled the required
+sequence is six `prompt` entries followed by six `decode` entries.  The first
+successful 0% all-local case supplies the baseline automatically; alternatively
+set `correctness.baseline_checksums.prompt` and `.decode` explicitly in the
+manifest.  Every Intertidal/zero-copy case must match the complete sequence,
+not only the final checksum.  A missing line, wrong count/order, checksum
+mismatch, NaN/Inf, or unavailable baseline records `correctness_fail` and then
+stops the sweep immediately.  Native `-ngl` logits can differ numerically by
+backend, so that path enforces sequence completeness and finiteness unless it
+is explicitly added to `strict_checksum_schemes`.
+
+Render the append-only CSV while the sweep is still in progress or after it
+finishes:
+
+```bash
+python3 plot_capacity_results.py \
+  --input results/gemma-capacity-sweep.csv \
+  --output results/gemma-capacity-performance
+```
+
+This writes both SVG and PNG.  The four panels show prefill and decode
+retention against measured logical working set and against realized gross RAM
+weight percentage.  The 95% acceptance target and 10% stop threshold are
+drawn directly on every panel.  Duplicate measurements of the same case gain
+a 95% Student-t confidence interval; otherwise the chart stays a measured
+point/line plot.  Native whole-layer CPU offload is markers-only, so its sparse
+residency choices are never presented as an interpolated 0.1% curve.  The
+hybrid pure-curve x-axis uses `gross_remote_pp`; because native offload has no
+VMM gross-page concept, its marker x-coordinate is the loader-reported
+`CPU / (CPU + CUDA)` model-buffer fraction.
+
+For PCIe/DMA profiling rather than the capacity sweep, follow
+[`PROFILING.md`](PROFILING.md).  It defines the matched H2D calibration,
+profile-off/direct-control/deep observer trio, selected prefill/decode probes,
+and the local `analyze_profile.py` CSV/Markdown/SVG report.

@@ -1,0 +1,90 @@
+q8_direct_frontier,start,ctx=256,b=32,ub=32,prompt=248
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 32109 MiB):
+  Device 0: NVIDIA GeForce RTX 5090, compute capability 12.0, VMM: yes, VRAM: 32109 MiB
+logit_checksum,prompt,dd260b84d6cace93,nonfinite=0
+logit_checksum,decode,f79af68205f794df,nonfinite=0
+[
+  {
+    "build_commit": "b820cc8",
+    "build_number": 1,
+    "cpu_info": "Intel(R) Core(TM) Ultra 5 230F",
+    "gpu_info": "NVIDIA GeForce RTX 5090",
+    "backends": "CUDA",
+    "model_filename": "/home/wici/gemma-4-31B-it-Q8_0.gguf",
+    "model_type": "gemma4 31B Q8_0",
+    "model_size": 32619841776,
+    "model_n_params": 30697345596,
+    "n_batch": 32,
+    "n_ubatch": 32,
+    "n_threads": 8,
+    "cpu_mask": "0x0",
+    "cpu_strict": false,
+    "poll": 50,
+    "type_k": "f16",
+    "type_v": "f16",
+    "n_gpu_layers": 61,
+    "n_cpu_moe": 0,
+    "split_mode": "layer",
+    "main_gpu": 0,
+    "no_kv_offload": false,
+    "flash_attn": 1,
+    "devices": "auto",
+    "tensor_split": "0.00",
+    "tensor_buft_overrides": "none",
+    "use_mmap": true,
+    "use_direct_io": false,
+    "embeddings": false,
+    "no_op_offload": 0,
+    "no_host": false,
+    "fit_target": 0,
+    "fit_min_ctx": 0,
+    "n_ctx": 256,
+    "n_prompt": 248,
+    "n_gen": 8,
+    "n_depth": 0,
+    "test_time": "2026-08-12T10:22:11Z",
+    "avg_ns": 489353926,
+    "stddev_ns": 0,
+    "avg_ts": 523.138748,
+    "stddev_ts": 0.000000,
+    "samples_ns": [ 489353926 ],
+    "samples_ts": [ 523.139 ]
+  }
+]
+q8_direct_frontier,end,ctx=256,b=32,ub=32,rc=0
+q8_direct_frontier,start,ctx=512,b=32,ub=32,prompt=504
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 32109 MiB):
+  Device 0: NVIDIA GeForce RTX 5090, compute capability 12.0, VMM: yes, VRAM: 32109 MiB
+[
+/run/user/1000/intertidal-nvcc/tmpxft_00296681_00000000-1_stdin:107: CUDA error
+[New LWP 3907190]
+[New LWP 3907189]
+[New LWP 3907167]
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/lib/x86_64-linux-gnu/libthread_db.so.1".
+0x00007c027d510913 in __GI___wait4 (pid=3908649, stat_loc=0x0, options=0, usage=0x0) at ../sysdeps/unix/sysv/linux/wait4.c:30
+#0  0x00007c027d510913 in __GI___wait4 (pid=3908649, stat_loc=0x0, options=0, usage=0x0) at ../sysdeps/unix/sysv/linux/wait4.c:30
+30	in ../sysdeps/unix/sysv/linux/wait4.c
+#1  0x00007c027d720663 in ggml_print_backtrace () from /home/wici/llama.cpp/build-cuda/bin/libggml-base.so.0
+#2  0x00007c027d72080b in ggml_abort () from /home/wici/llama.cpp/build-cuda/bin/libggml-base.so.0
+warning: 30	../sysdeps/unix/sysv/linux/wait4.c: No such file or directory
+#3  0x00007c02789c82e7 in ggml_cuda_error(char const*, char const*, char const*, int, char const*) () from /dev/shm/intertidal-capacity.mEP47j/libggml-cuda.so.0
+#4  0x00007c02790eb1da in void launch_mul_mat_q<(ggml_type)8, 32>(ggml_backend_cuda_context&, mmq_args const&, CUstream_st*) () from /dev/shm/intertidal-capacity.mEP47j/libggml-cuda.so.0
+#5  0x00007c0278a07f82 in ggml_cuda_mul_mat_q(ggml_backend_cuda_context&, ggml_tensor const*, ggml_tensor const*, ggml_tensor const*, ggml_tensor*) () from /dev/shm/intertidal-capacity.mEP47j/libggml-cuda.so.0
+#6  0x00007c02789e8400 in ggml_backend_cuda_graph_compute(ggml_backend*, ggml_cgraph*) () from /dev/shm/intertidal-capacity.mEP47j/libggml-cuda.so.0
+#7  0x00007c027d73df57 in ggml_backend_sched_graph_compute_async () from /home/wici/llama.cpp/build-cuda/bin/libggml-base.so.0
+#8  0x00007c027caea771 in llama_context::graph_compute(ggml_cgraph*, bool) () from /home/wici/llama.cpp/build-cuda/bin/libllama.so.0
+#9  0x00007c027caee8ba in llama_context::process_ubatch(llama_ubatch const&, llm_graph_type, llama_memory_context_i*, ggml_status&) () from /home/wici/llama.cpp/build-cuda/bin/libllama.so.0
+#10 0x00007c027caf5360 in llama_context::decode(llama_batch const&) () from /home/wici/llama.cpp/build-cuda/bin/libllama.so.0
+#11 0x00007c027caf6fef in llama_decode () from /home/wici/llama.cpp/build-cuda/bin/libllama.so.0
+#12 0x00007c027dadb3d1 in test_prompt(llama_context*, int, int, int) () from /dev/shm/intertidal-capacity.mEP47j/libllama-bench-impl.so
+#13 0x00007c027daea9c9 in llama_bench(int, char**) () from /dev/shm/intertidal-capacity.mEP47j/libllama-bench-impl.so
+#14 0x00007c027d42a1ca in __libc_start_call_main (main=main@entry=0x5c8666bed270 <main>, argc=argc@entry=32, argv=argv@entry=0x7ffd24667538) at ../sysdeps/nptl/libc_start_call_main.h:58
+#15 0x00007c027d42a28b in __libc_start_main_impl (main=0x5c8666bed270 <main>, argc=32, argv=0x7ffd24667538, init=<optimized out>, fini=<optimized out>, rtld_fini=<optimized out>, stack_end=0x7ffd24667528) at ../csu/libc-start.c:360
+warning: 58	../sysdeps/nptl/libc_start_call_main.h: No such file or directory
+warning: 360	../csu/libc-start.c: No such file or directory
+#16 0x00005c8666bed2a5 in _start ()
+[Inferior 1 (process 3907135) detached]
+timeout: the monitored command dumped core
+q8_direct_frontier,end,ctx=512,b=32,ub=32,rc=134
+bash: line 7: 3907134 Aborted                 timeout --signal=TERM --kill-after=30s 900s /home/wici/llama.cpp/build-cuda/bin/llama-bench -m /home/wici/gemma-4-31B-it-Q8_0.gguf -ngl 61 --ctx-size "$ctx" -p 0 -n 0 -pg "$prompt,$gen" -d 0 -b 32 -ub 32 -t 8 -fa on -ctk f16 -ctv f16 -r 1 --no-warmup -o json

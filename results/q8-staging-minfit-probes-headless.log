@@ -1,0 +1,50 @@
+2 MiB, 32109 MiB
+q8_headless,start,pp=2.0,pages=312
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 32109 MiB):
+  Device 0: NVIDIA GeForce RTX 5090, compute capability 12.0, VMM: yes, VRAM: 32109 MiB
+hybrid_vmm,mode=staging,selection=global_budget,requested_pages=312,requested_bytes=654311424,requested_mib=624.000,gross_pages=312,gross_bytes=654311424,gross_mib=624.000,staging_bytes=25165824,staging_mib=24.000,net_bytes=629145600,net_mib=600.000,eligible_pages=14428,selected_tensors=312,layers=60,buffer_bytes=31117259520,local_physical_bytes=30463229952,page_bytes=2097152,buffer_mib=29675.731,remote_mib=624.000,local_physical_mib=29052.000,net_saved_mib=600.000,page_mib=2.000
+llama_bench: error: failed to create context with model '/home/wici/gemma-4-31B-it-Q8_0.gguf'
+[
+q8_headless,end,pp=2.0,pages=312,rc=1
+q8_headless,start,pp=2.5,pages=390
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 32109 MiB):
+  Device 0: NVIDIA GeForce RTX 5090, compute capability 12.0, VMM: yes, VRAM: 32109 MiB
+hybrid_vmm,mode=staging,selection=global_budget,requested_pages=390,requested_bytes=817889280,requested_mib=780.000,gross_pages=390,gross_bytes=817889280,gross_mib=780.000,staging_bytes=29360128,staging_mib=28.000,net_bytes=788529152,net_mib=752.000,eligible_pages=14428,selected_tensors=390,layers=60,buffer_bytes=31117259520,local_physical_bytes=30299652096,page_bytes=2097152,buffer_mib=29675.731,remote_mib=780.000,local_physical_mib=28896.000,net_saved_mib=752.000,page_mib=2.000
+llama_bench: error: failed to create context with model '/home/wici/gemma-4-31B-it-Q8_0.gguf'
+[
+q8_headless,end,pp=2.5,pages=390,rc=1
+q8_headless,start,pp=3.0,pages=467
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 32109 MiB):
+  Device 0: NVIDIA GeForce RTX 5090, compute capability 12.0, VMM: yes, VRAM: 32109 MiB
+hybrid_vmm,mode=staging,selection=global_budget,requested_pages=467,requested_bytes=979369984,requested_mib=934.000,gross_pages=467,gross_bytes=979369984,gross_mib=934.000,staging_bytes=33554432,staging_mib=32.000,net_bytes=945815552,net_mib=902.000,eligible_pages=14428,selected_tensors=410,layers=60,buffer_bytes=31117259520,local_physical_bytes=30138171392,page_bytes=2097152,buffer_mib=29675.731,remote_mib=934.000,local_physical_mib=28742.000,net_saved_mib=902.000,page_mib=2.000
+llama_bench: error: failed to create context with model '/home/wici/gemma-4-31B-it-Q8_0.gguf'
+[
+q8_headless,end,pp=3.0,pages=467,rc=1
+q8_headless,start,pp=3.25,pages=506
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 32109 MiB):
+  Device 0: NVIDIA GeForce RTX 5090, compute capability 12.0, VMM: yes, VRAM: 32109 MiB
+hybrid_vmm,mode=staging,selection=global_budget,requested_pages=506,requested_bytes=1061158912,requested_mib=1012.000,gross_pages=506,gross_bytes=1061158912,gross_mib=1012.000,staging_bytes=37748736,staging_mib=36.000,net_bytes=1023410176,net_mib=976.000,eligible_pages=14428,selected_tensors=410,layers=60,buffer_bytes=31117259520,local_physical_bytes=30056382464,page_bytes=2097152,buffer_mib=29675.731,remote_mib=1012.000,local_physical_mib=28664.000,net_saved_mib=976.000,page_mib=2.000
+llama_bench: error: failed to create context with model '/home/wici/gemma-4-31B-it-Q8_0.gguf'
+[
+q8_headless,end,pp=3.25,pages=506,rc=1
+q8_headless,start,pp=3.5,pages=545
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 32109 MiB):
+  Device 0: NVIDIA GeForce RTX 5090, compute capability 12.0, VMM: yes, VRAM: 32109 MiB
+hybrid_vmm,mode=staging,selection=global_budget,requested_pages=545,requested_bytes=1142947840,requested_mib=1090.000,gross_pages=545,gross_bytes=1142947840,gross_mib=1090.000,staging_bytes=41943040,staging_mib=40.000,net_bytes=1101004800,net_mib=1050.000,eligible_pages=14428,selected_tensors=410,layers=60,buffer_bytes=31117259520,local_physical_bytes=29974593536,page_bytes=2097152,buffer_mib=29675.731,remote_mib=1090.000,local_physical_mib=28586.000,net_saved_mib=1050.000,page_mib=2.000
+llama_bench: error: failed to create context with model '/home/wici/gemma-4-31B-it-Q8_0.gguf'
+[
+q8_headless,end,pp=3.5,pages=545,rc=1
+q8_headless,start,pp=3.75,pages=584
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 32109 MiB):
+  Device 0: NVIDIA GeForce RTX 5090, compute capability 12.0, VMM: yes, VRAM: 32109 MiB
+hybrid_vmm,mode=staging,selection=global_budget,requested_pages=584,requested_bytes=1224736768,requested_mib=1168.000,gross_pages=584,gross_bytes=1224736768,gross_mib=1168.000,staging_bytes=41943040,staging_mib=40.000,net_bytes=1182793728,net_mib=1128.000,eligible_pages=14428,selected_tensors=410,layers=60,buffer_bytes=31117259520,local_physical_bytes=29892804608,page_bytes=2097152,buffer_mib=29675.731,remote_mib=1168.000,local_physical_mib=28508.000,net_saved_mib=1128.000,page_mib=2.000
+llama_bench: error: failed to create context with model '/home/wici/gemma-4-31B-it-Q8_0.gguf'
+[
+q8_headless,end,pp=3.75,pages=584,rc=1
+q8_headless,start,pp=4.0,pages=623
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 32109 MiB):
+  Device 0: NVIDIA GeForce RTX 5090, compute capability 12.0, VMM: yes, VRAM: 32109 MiB
+hybrid_vmm,mode=staging,selection=global_budget,requested_pages=623,requested_bytes=1306525696,requested_mib=1246.000,gross_pages=623,gross_bytes=1306525696,gross_mib=1246.000,staging_bytes=46137344,staging_mib=44.000,net_bytes=1260388352,net_mib=1202.000,eligible_pages=14428,selected_tensors=410,layers=60,buffer_bytes=31117259520,local_physical_bytes=29811015680,page_bytes=2097152,buffer_mib=29675.731,remote_mib=1246.000,local_physical_mib=28430.000,net_saved_mib=1202.000,page_mib=2.000
+llama_bench: error: failed to create context with model '/home/wici/gemma-4-31B-it-Q8_0.gguf'
+[
+q8_headless,end,pp=4.0,pages=623,rc=1

@@ -1,6 +1,7 @@
 __pycache__/
 *.py[cod]
 *.nsys-rep
+*.ncu-rep
 *.sqlite
 *.bin
 build/
