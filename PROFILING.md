@@ -104,9 +104,10 @@ repeat calibration with any exact layer sizes that fall far between defaults.
 
 Use a fresh CSV for profiling so resume logic cannot skip cases already present
 in the main 0.1-point sweep.  Each command prepends a 0% checksum control.  The
-example points cover the validated low-offload point, a middle point, and the
-current high-offload region; add the measured 10%-retention crossing once the
-performance sweep is complete.
+first priority is the decode-defined 90--95% sweet spot.  Historical locator
+data places its boundaries around 3.3--3.9% gross offload; reconfirm these with
+the current binary before optimizing.  Keep 10% and the current high-offload
+region as later full-curve diagnosis points.
 
 Before profiling, deploy the current patch to a fresh temporary build and pass
 its executable/library path in the manifest.  Do not reuse the old temporary
@@ -122,7 +123,7 @@ python3 -u gemma_capacity_sweep.py \
   --manifest capacity-sweep-manifest.rtx5090.json \
   --output results/profile-q4-light.csv \
   --schemes intertidal_dma \
-  --only-offload-pp 3.2,10,22.4 \
+  --only-offload-pp 3.3,3.4,3.6,3.7,3.8,3.9 \
   --profile-benchmark prefill \
   --profile light \
   --profile-output results/profile-q4-light.jsonl
@@ -131,7 +132,7 @@ python3 -u gemma_capacity_sweep.py \
   --manifest capacity-sweep-manifest.rtx5090.json \
   --output results/profile-q4-direct-control.csv \
   --schemes intertidal_dma \
-  --only-offload-pp 3.2,10,22.4 \
+  --only-offload-pp 3.3,3.4,3.6,3.7,3.8,3.9 \
   --profile-benchmark prefill \
   --profile deep --profile-backend-off \
   --profile-output results/profile-q4-direct-control.jsonl
@@ -140,7 +141,7 @@ python3 -u gemma_capacity_sweep.py \
   --manifest capacity-sweep-manifest.rtx5090.json \
   --output results/profile-q4-deep.csv \
   --schemes intertidal_dma \
-  --only-offload-pp 3.2,10,22.4 \
+  --only-offload-pp 3.3,3.4,3.6,3.7,3.8,3.9 \
   --profile-benchmark prefill \
   --profile deep --profile-raw \
   --profile-output results/profile-q4-deep.jsonl

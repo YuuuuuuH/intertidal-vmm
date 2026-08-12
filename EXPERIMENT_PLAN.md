@@ -90,6 +90,45 @@ Approximate server milestone contexts are:
 
 ## Experiment matrix
 
+### Execution priority: characterize the 90--95% sweet spot first
+
+The formal curve still runs to the capacity limit or the 10% retention stop
+rule below.  The 90--95% band is an investigation priority, not an early stop
+condition and not a replacement baseline.
+
+Historical Q4 DMA data locates the decode-defined band near 3.3--3.8% gross
+weight offload: 3.3% retained about 95.14%, 3.4% about 94.93%, 3.8% about
+91.02%, and 3.9% about 88.97%.  Prefill remained near 99% in this interval.
+These old points are locators only because they did not have bracketing
+same-session all-local sentinels.  The old layout's physical staging allocation
+also stepped from 20 MiB at 3.6% to 24 MiB at 3.7%, while decode retention fell
+from about 94.26% to 92.82%.  Profile this boundary to distinguish a layout or
+per-layer-copy knee from unavoidable aggregate PCIe saturation.
+
+On a fresh binary, run the following order:
+
+1. Recalibrate same-boot pinned H2D bandwidth and pass the staging correctness
+   gates before collecting performance data.
+2. With profiling disabled and CUDA Graphs enabled, scan Q4 DMA from 2.8% to
+   4.2% in 0.1-point increments.  Use fresh output files and all-local controls
+   before and after the scan.
+3. Confirm the 95% and 90% boundaries with ten repetitions.  At minimum retain
+   3.3%, 3.4%, 3.6%, 3.7%, 3.8%, and 3.9% as diagnosis points.
+4. Profile prefill and decode in separate processes at those selected points.
+   Measure light Graph-on telemetry, a direct-stream/profile-off observer
+   control, and deep CUDA-event instrumentation.  Deep-profile tok/s is never
+   used as production retention.
+5. Resume or rerun the complete 0.1-point DMA curve through two consecutive
+   points at or below 10%, then run zero-copy, native whole-layer offload, the
+   31--34 GiB frontier, and populated-context milestones.
+
+Sweet-spot, profiling, and canonical full-curve runs use distinct CSV/JSONL
+files.  A selected profiling row must not seed a production sweep because its
+Graph mode, observer overhead, repetition count, and phase identity differ.
+Q4 fixed `pp512`/`tg64` retention is the pure weight-offload curve.  Q8
+populated-context retention additionally includes longer-attention arithmetic
+and is reported separately.
+
 ### A. Pure offload-cost curve
 
 - Keep the benchmark work fixed at `pp512` and `tg64`.
@@ -132,6 +171,9 @@ Approximate server milestone contexts are:
 - Insert an all-local sentinel at least every 1.0 percentage point and normalize
   to the nearest same-session sentinel.  Retain the historical
   `2262.12 pp512 tok/s` and `75.48 tg tok/s` only as an audit reference.
+- Treat 95% and 90% as diagnostic boundaries.  A production point in the
+  90--95% band is acceptable for capacity-oriented operation, but it does not
+  change the full-curve stopping rule.
 - Record process peak VRAM, graphics clock, temperature, power, GPU utilization,
   host `MemAvailable`, major faults, and memory PSI.
 - Stop a curve after reaching 34 GiB, or after either prefill or decode remains
