@@ -1,0 +1,966 @@
+diff --git a/ggml/src/ggml-cuda/ggml-cuda.cu b/ggml/src/ggml-cuda/ggml-cuda.cu
+index cca7059..7e6cb60 100644
+--- a/ggml/src/ggml-cuda/ggml-cuda.cu
++++ b/ggml/src/ggml-cuda/ggml-cuda.cu
+@@ -72,11 +72,14 @@
+ #include <atomic>
+ #include <charconv>
+ #include <cinttypes>
++#include <climits>
+ #include <condition_variable>
+ #include <cstddef>
+ #include <cstdint>
+ #include <cfloat>
++#include <cmath>
+ #include <initializer_list>
++#include <iterator>
+ #include <limits>
+ #include <map>
+ #include <memory>
+@@ -1478,6 +1481,544 @@ ggml_backend_buffer_type_t ggml_backend_cuda_split_buffer_type(int main_device,
+     return &result.first->second;
+ }
+ 
++// single-GPU VRAM + pinned-RAM hybrid buffer
++//
++// The tensor addresses in this buffer are stable CUDA virtual addresses.  Most
++// pages are backed by private VRAM.  A small number of complete 2 MiB pages are
++// backed by one of two shared, per-layer staging allocations.  All layers with
++// the same staging parity alias the same physical pages at their own tensor
++// addresses.  Before a layer executes, its packed host pages are copied to the
++// appropriate staging allocation.  Consequently the unmodified CUDA kernels
++// see an ordinary contiguous tensor and retain fusion, stream-K and graph
++// capture.
++
++struct ggml_backend_cuda_hybrid_buffer_context;
++
++struct ggml_tensor_extra_hybrid {
++    ggml_backend_cuda_hybrid_buffer_context * buffer_ctx = nullptr;
++    ggml_tensor * tensor = nullptr;
++    size_t offset = 0;
++    size_t nbytes = 0;
++    int layer = -1;
++    CUdeviceptr remote_addr = 0;
++    size_t remote_size = 0;
++    size_t slot_offset = 0;
++};
++
++struct ggml_cuda_hybrid_mapping {
++    CUdeviceptr addr = 0;
++    size_t size = 0;
++};
++
++struct ggml_cuda_hybrid_layer {
++    int layer = -1;
++    int parity = -1;
++    size_t size = 0;
++    char * host = nullptr;
++};
++
++struct ggml_backend_cuda_hybrid_buffer_type_context {
++    int device;
++    float remote_fraction;
++    int remote_pages;
++    std::string name;
++};
++
++static bool ggml_backend_buft_is_cuda_hybrid(ggml_backend_buffer_type_t buft);
++
++struct ggml_backend_cuda_hybrid_buffer_context {
++    int device = 0;
++    float remote_fraction = 0.0f;
++    int remote_pages = 0;
++    size_t buffer_size = 0;
++    size_t reserve_size = 0;
++    size_t granularity = 0;
++    CUdeviceptr base = 0;
++    CUdeviceptr slot_base[2] = { 0, 0 };
++    size_t slot_size[2] = { 0, 0 };
++    cudaStream_t copy_stream = nullptr;
++    cudaEvent_t copy_kick[2] = { nullptr, nullptr };
++    cudaEvent_t copy_ready[2] = { nullptr, nullptr };
++    int loaded_layer[2] = { -1, -1 };
++    int last_prepared_layer = -1;
++    bool wrap_prefetch_pending = false;
++    bool finalized = false;
++    std::vector<ggml_cuda_hybrid_mapping> mappings;
++    std::map<int, ggml_cuda_hybrid_layer> layers;
++
++    ggml_backend_cuda_hybrid_buffer_context(
++            int device_, float remote_fraction_, int remote_pages_, size_t buffer_size_)
++        : device(device_), remote_fraction(remote_fraction_), remote_pages(remote_pages_), buffer_size(buffer_size_) {
++        ggml_cuda_set_device(device);
++
++        CUmemAllocationProp prop = {};
++        prop.type = CU_MEM_ALLOCATION_TYPE_PINNED;
++        prop.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
++        prop.location.id = device;
++        CU_CHECK(cuMemGetAllocationGranularity(
++            &granularity, &prop, CU_MEM_ALLOC_GRANULARITY_RECOMMENDED));
++        reserve_size = granularity * ((buffer_size + granularity - 1) / granularity);
++        CU_CHECK(cuMemAddressReserve(&base, reserve_size, granularity, 0, 0));
++
++        CUDA_CHECK(cudaStreamCreateWithFlags(&copy_stream, cudaStreamNonBlocking));
++        for (int p = 0; p < 2; ++p) {
++            CUDA_CHECK(cudaEventCreateWithFlags(&copy_kick[p], cudaEventDisableTiming));
++            CUDA_CHECK(cudaEventCreateWithFlags(&copy_ready[p], cudaEventDisableTiming));
++        }
++    }
++
++    ~ggml_backend_cuda_hybrid_buffer_context() {
++        ggml_cuda_set_device(device);
++        CUDA_CHECK(cudaDeviceSynchronize());
++
++        for (auto & entry : layers) {
++            if (entry.second.host != nullptr) {
++                CUDA_CHECK(cudaFreeHost(entry.second.host));
++            }
++        }
++        for (ggml_tensor_extra_hybrid * extra : tensor_extras) {
++            delete extra;
++        }
++        for (const ggml_cuda_hybrid_mapping & mapping : mappings) {
++            CU_CHECK(cuMemUnmap(mapping.addr, mapping.size));
++        }
++        for (int p = 0; p < 2; ++p) {
++            if (slot_base[p] != 0) {
++                CU_CHECK(cuMemAddressFree(slot_base[p], slot_size[p]));
++            }
++            if (copy_kick[p] != nullptr) {
++                CUDA_CHECK(cudaEventDestroy(copy_kick[p]));
++            }
++            if (copy_ready[p] != nullptr) {
++                CUDA_CHECK(cudaEventDestroy(copy_ready[p]));
++            }
++        }
++        if (copy_stream != nullptr) {
++            CUDA_CHECK(cudaStreamDestroy(copy_stream));
++        }
++        if (base != 0) {
++            CU_CHECK(cuMemAddressFree(base, reserve_size));
++        }
++    }
++
++    std::vector<ggml_tensor_extra_hybrid *> tensor_extras;
++};
++
++static size_t ggml_cuda_hybrid_align_up(size_t value, size_t alignment) {
++    return alignment * ((value + alignment - 1) / alignment);
++}
++
++static size_t ggml_cuda_hybrid_align_down(size_t value, size_t alignment) {
++    return alignment * (value / alignment);
++}
++
++static int ggml_cuda_hybrid_layer_from_name(const char * name) {
++    const char * marker = strstr(name, "blk.");
++    if (marker == nullptr) {
++        return -1;
++    }
++    marker += 4;
++    char * end = nullptr;
++    const long layer = strtol(marker, &end, 10);
++    return end == marker || layer < 0 || layer > INT_MAX ? -1 : int(layer);
++}
++
++static void ggml_cuda_hybrid_map(
++        ggml_backend_cuda_hybrid_buffer_context * ctx,
++        CUdeviceptr addr, size_t size, CUmemGenericAllocationHandle handle, size_t handle_offset) {
++    GGML_ASSERT(size > 0 && size % ctx->granularity == 0);
++    CU_CHECK(cuMemMap(addr, size, handle_offset, handle, 0));
++    CUmemAccessDesc access = {};
++    access.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
++    access.location.id = ctx->device;
++    access.flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE;
++    CU_CHECK(cuMemSetAccess(addr, size, &access, 1));
++    ctx->mappings.push_back({ addr, size });
++}
++
++static void ggml_cuda_hybrid_finalize(ggml_backend_cuda_hybrid_buffer_context * ctx) {
++    if (ctx->finalized) {
++        return;
++    }
++    ctx->finalized = true;
++    ggml_cuda_set_device(ctx->device);
++
++    const size_t page = ctx->granularity;
++    const size_t n_pages = ctx->reserve_size / page;
++    std::vector<int> page_owner(n_pages, -1);
++
++    // Select only complete pages wholly contained in a tensor.  This keeps the
++    // virtual tensor byte layout unchanged and makes every staged byte useful.
++    for (ggml_tensor_extra_hybrid * extra : ctx->tensor_extras) {
++        if (extra->layer < 0 || extra->nbytes < page) {
++            continue;
++        }
++        const size_t first_full = ggml_cuda_hybrid_align_up(extra->offset, page);
++        const size_t end_full = ggml_cuda_hybrid_align_down(extra->offset + extra->nbytes, page);
++        if (end_full <= first_full) {
++            continue;
++        }
++
++        size_t wanted_pages = 0;
++        if (ctx->remote_pages > 0) {
++            wanted_pages = size_t(ctx->remote_pages);
++        } else {
++            const size_t wanted_bytes = size_t(std::ceil(double(extra->nbytes) * ctx->remote_fraction));
++            wanted_pages = wanted_bytes / page;
++        }
++        wanted_pages = std::min(wanted_pages, (end_full - first_full) / page);
++        if (wanted_pages == 0) {
++            continue;
++        }
++
++        extra->remote_size = wanted_pages * page;
++        extra->remote_addr = ctx->base + end_full - extra->remote_size;
++        auto & layer = ctx->layers[extra->layer];
++        layer.layer = extra->layer;
++        extra->slot_offset = layer.size;
++        layer.size += extra->remote_size;
++
++        const size_t first_page = size_t(extra->remote_addr - ctx->base) / page;
++        for (size_t i = 0; i < wanted_pages; ++i) {
++            GGML_ASSERT(page_owner[first_page + i] == -1);
++            page_owner[first_page + i] = extra->layer;
++        }
++    }
++
++    int parity = 0;
++    for (auto & entry : ctx->layers) {
++        entry.second.parity = parity;
++        ctx->slot_size[parity] = std::max(ctx->slot_size[parity], entry.second.size);
++        parity ^= 1;
++    }
++
++    CUmemAllocationProp prop = {};
++    prop.type = CU_MEM_ALLOCATION_TYPE_PINNED;
++    prop.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
++    prop.location.id = ctx->device;
++
++    // Map private VRAM for each maximal run of non-staged pages.
++    size_t local_bytes = 0;
++    for (size_t begin = 0; begin < n_pages;) {
++        if (page_owner[begin] != -1) {
++            ++begin;
++            continue;
++        }
++        size_t end = begin + 1;
++        while (end < n_pages && page_owner[end] == -1) {
++            ++end;
++        }
++        const size_t bytes = (end - begin) * page;
++        CUmemGenericAllocationHandle handle;
++        CU_CHECK(cuMemCreate(&handle, bytes, &prop, 0));
++        ggml_cuda_hybrid_map(ctx, ctx->base + begin * page, bytes, handle, 0);
++        CU_CHECK(cuMemRelease(handle));
++        local_bytes += bytes;
++        begin = end;
++    }
++
++    // Two physical slots are each mapped once as a contiguous copy destination
++    // and then aliased into every layer of that parity at the tensor's stable
++    // address.  Use one physical handle per page: NVIDIA limits the number of
++    // aliases of a single handle, while a page handle only needs one alias per
++    // alternating layer (about 30 for a 60-layer model).
++    for (int p = 0; p < 2; ++p) {
++        if (ctx->slot_size[p] == 0) {
++            continue;
++        }
++        ctx->slot_size[p] = ggml_cuda_hybrid_align_up(ctx->slot_size[p], page);
++        CU_CHECK(cuMemAddressReserve(&ctx->slot_base[p], ctx->slot_size[p], page, 0, 0));
++        for (size_t slot_offset = 0; slot_offset < ctx->slot_size[p]; slot_offset += page) {
++            CUmemGenericAllocationHandle handle;
++            CU_CHECK(cuMemCreate(&handle, page, &prop, 0));
++            ggml_cuda_hybrid_map(ctx, ctx->slot_base[p] + slot_offset, page, handle, 0);
++            for (ggml_tensor_extra_hybrid * extra : ctx->tensor_extras) {
++                if (extra->remote_size == 0 || ctx->layers.at(extra->layer).parity != p ||
++                    slot_offset < extra->slot_offset ||
++                    slot_offset >= extra->slot_offset + extra->remote_size) {
++                    continue;
++                }
++                const size_t tensor_page_offset = slot_offset - extra->slot_offset;
++                ggml_cuda_hybrid_map(ctx, extra->remote_addr + tensor_page_offset, page, handle, 0);
++            }
++            CU_CHECK(cuMemRelease(handle));
++        }
++    }
++
++    size_t remote_bytes = 0;
++    for (auto & entry : ctx->layers) {
++        ggml_cuda_hybrid_layer & layer = entry.second;
++        CUDA_CHECK(cudaHostAlloc((void **) &layer.host, layer.size,
++            cudaHostAllocPortable | cudaHostAllocWriteCombined));
++        memset(layer.host, 0, layer.size);
++        remote_bytes += layer.size;
++    }
++
++    const size_t staging_bytes = ctx->slot_size[0] + ctx->slot_size[1];
++    const int64_t net_saved = int64_t(ctx->buffer_size) - int64_t(local_bytes) - int64_t(staging_bytes);
++    fprintf(stderr, "hybrid_vmm,buffer_mib=%.3f,remote_mib=%.3f,layers=%zu,"
++                    "local_physical_mib=%.3f,staging_mib=%.3f,net_saved_mib=%.3f,page_mib=%.3f\n",
++        ctx->buffer_size / 1048576.0, remote_bytes / 1048576.0, ctx->layers.size(),
++        local_bytes / 1048576.0, staging_bytes / 1048576.0, net_saved / 1048576.0,
++        page / 1048576.0);
++}
++
++static void ggml_cuda_hybrid_prefetch_layer(
++        ggml_backend_cuda_hybrid_buffer_context * ctx,
++        ggml_cuda_hybrid_layer & layer,
++        cudaStream_t main_stream) {
++    const int p = layer.parity;
++    if (ctx->loaded_layer[p] == layer.layer) {
++        return;
++    }
++
++    // The main->copy dependency is required both for safe slot reuse and to
++    // make the auxiliary stream part of CUDA graph capture.  A later wait on
++    // copy_ready joins it back into the main stream.
++    CUDA_CHECK(cudaEventRecord(ctx->copy_kick[p], main_stream));
++    CUDA_CHECK(cudaStreamWaitEvent(ctx->copy_stream, ctx->copy_kick[p], 0));
++    CUDA_CHECK(cudaMemcpyAsync(reinterpret_cast<void *>(ctx->slot_base[p]),
++        layer.host, layer.size, cudaMemcpyHostToDevice, ctx->copy_stream));
++    CUDA_CHECK(cudaEventRecord(ctx->copy_ready[p], ctx->copy_stream));
++    ctx->loaded_layer[p] = layer.layer;
++}
++
++static void ggml_cuda_hybrid_prepare_layer(
++        ggml_backend_cuda_hybrid_buffer_context * ctx, int layer, cudaStream_t main_stream) {
++    GGML_ASSERT(ctx != nullptr && ctx->finalized);
++    if (ctx->last_prepared_layer == layer) {
++        return;
++    }
++
++    auto current = ctx->layers.find(layer);
++    if (current == ctx->layers.end()) {
++        return;
++    }
++    const bool already_loaded = ctx->loaded_layer[current->second.parity] == layer;
++    ggml_cuda_hybrid_prefetch_layer(ctx, current->second, main_stream);
++    // Layer zero can already have been prefetched and joined by the preceding
++    // graph iteration.  Waiting on its event again at graph entry while the
++    // same graph records it at the tail creates a capture cycle.
++    if (!already_loaded || current != ctx->layers.begin()) {
++        CUDA_CHECK(cudaStreamWaitEvent(main_stream, ctx->copy_ready[current->second.parity], 0));
++    }
++    ctx->last_prepared_layer = layer;
++
++    auto next = std::next(current);
++    if (next == ctx->layers.end()) {
++        next = ctx->layers.begin();
++        ctx->wrap_prefetch_pending = true;
++    }
++    if (next != current) {
++        ggml_cuda_hybrid_prefetch_layer(ctx, next->second, main_stream);
++    }
++}
++
++static void ggml_cuda_hybrid_prepare_tensor(const ggml_tensor * tensor, cudaStream_t main_stream) {
++    if (tensor == nullptr || tensor->buffer == nullptr ||
++        !ggml_backend_buft_is_cuda_hybrid(tensor->buffer->buft)) {
++        return;
++    }
++    auto * extra = static_cast<ggml_tensor_extra_hybrid *>(tensor->extra);
++    if (extra == nullptr || extra->remote_size == 0) {
++        return;
++    }
++    ggml_cuda_hybrid_prepare_layer(extra->buffer_ctx, extra->layer, main_stream);
++}
++
++static void ggml_cuda_hybrid_finish_graph(
++        ggml_backend_cuda_hybrid_buffer_context * ctx, cudaStream_t main_stream) {
++    if (ctx == nullptr || !ctx->wrap_prefetch_pending || ctx->layers.empty()) {
++        return;
++    }
++    const int parity = ctx->layers.begin()->second.parity;
++    CUDA_CHECK(cudaStreamWaitEvent(main_stream, ctx->copy_ready[parity], 0));
++    ctx->wrap_prefetch_pending = false;
++}
++
++static const char * ggml_backend_cuda_hybrid_buffer_type_get_name(ggml_backend_buffer_type_t buft) {
++    GGML_UNUSED(buft);
++    return GGML_CUDA_NAME "_Hybrid";
++}
++
++static bool ggml_backend_buft_is_cuda_hybrid(ggml_backend_buffer_type_t buft) {
++    return buft->iface.get_name == ggml_backend_cuda_hybrid_buffer_type_get_name;
++}
++
++static void ggml_backend_cuda_hybrid_buffer_free_buffer(ggml_backend_buffer_t buffer) {
++    delete static_cast<ggml_backend_cuda_hybrid_buffer_context *>(buffer->context);
++}
++
++static void * ggml_backend_cuda_hybrid_buffer_get_base(ggml_backend_buffer_t buffer) {
++    auto * ctx = static_cast<ggml_backend_cuda_hybrid_buffer_context *>(buffer->context);
++    return reinterpret_cast<void *>(ctx->base);
++}
++
++static enum ggml_status ggml_backend_cuda_hybrid_buffer_init_tensor(
++        ggml_backend_buffer_t buffer, ggml_tensor * tensor) {
++    GGML_ASSERT(tensor->view_src == nullptr);
++    GGML_ASSERT(ggml_is_contiguous(tensor));
++    GGML_ASSERT(tensor->ne[2] == 1 && tensor->ne[3] == 1);
++
++    auto * buffer_ctx = static_cast<ggml_backend_cuda_hybrid_buffer_context *>(buffer->context);
++    auto * extra = new ggml_tensor_extra_hybrid{};
++    buffer_ctx->tensor_extras.push_back(extra);
++
++    extra->buffer_ctx = buffer_ctx;
++    extra->tensor = tensor;
++    extra->offset = size_t(reinterpret_cast<CUdeviceptr>(tensor->data) - buffer_ctx->base);
++    extra->nbytes = ggml_nbytes(tensor);
++    extra->layer = ggml_cuda_hybrid_layer_from_name(tensor->name);
++
++    tensor->extra = extra;
++    return GGML_STATUS_SUCCESS;
++}
++
++static void ggml_backend_cuda_hybrid_buffer_set_tensor(
++        ggml_backend_buffer_t buffer, ggml_tensor * tensor, const void * data, size_t offset, size_t size) {
++    GGML_ASSERT(offset == 0 && size == ggml_nbytes(tensor));
++    auto * ctx = static_cast<ggml_backend_cuda_hybrid_buffer_context *>(buffer->context);
++    ggml_cuda_hybrid_finalize(ctx);
++    auto * extra = static_cast<ggml_tensor_extra_hybrid *>(tensor->extra);
++
++    if (extra->remote_size == 0) {
++        CUDA_CHECK(cudaMemcpyAsync(tensor->data, data, size, cudaMemcpyHostToDevice, cudaStreamPerThread));
++    } else {
++        const size_t remote_offset = size_t(extra->remote_addr -
++            reinterpret_cast<CUdeviceptr>(tensor->data));
++        const size_t suffix_offset = remote_offset + extra->remote_size;
++        if (remote_offset > 0) {
++            CUDA_CHECK(cudaMemcpyAsync(tensor->data, data, remote_offset,
++                cudaMemcpyHostToDevice, cudaStreamPerThread));
++        }
++        if (suffix_offset < size) {
++            CUDA_CHECK(cudaMemcpyAsync(static_cast<char *>(tensor->data) + suffix_offset,
++                static_cast<const char *>(data) + suffix_offset, size - suffix_offset,
++                cudaMemcpyHostToDevice, cudaStreamPerThread));
++        }
++        ggml_cuda_hybrid_layer & layer = ctx->layers.at(extra->layer);
++        memcpy(layer.host + extra->slot_offset,
++            static_cast<const char *>(data) + remote_offset, extra->remote_size);
++    }
++    CUDA_CHECK(cudaStreamSynchronize(cudaStreamPerThread));
++}
++
++static void ggml_backend_cuda_hybrid_buffer_get_tensor(
++        ggml_backend_buffer_t buffer, const ggml_tensor * tensor, void * data, size_t offset, size_t size) {
++    GGML_ASSERT(offset == 0 && size == ggml_nbytes(tensor));
++    auto * ctx = static_cast<ggml_backend_cuda_hybrid_buffer_context *>(buffer->context);
++    ggml_cuda_hybrid_finalize(ctx);
++    auto * extra = static_cast<ggml_tensor_extra_hybrid *>(tensor->extra);
++
++    if (extra->remote_size == 0) {
++        CUDA_CHECK(cudaMemcpyAsync(data, tensor->data, size, cudaMemcpyDeviceToHost, cudaStreamPerThread));
++    } else {
++        const size_t remote_offset = size_t(extra->remote_addr -
++            reinterpret_cast<CUdeviceptr>(tensor->data));
++        const size_t suffix_offset = remote_offset + extra->remote_size;
++        if (remote_offset > 0) {
++            CUDA_CHECK(cudaMemcpyAsync(data, tensor->data, remote_offset,
++                cudaMemcpyDeviceToHost, cudaStreamPerThread));
++        }
++        if (suffix_offset < size) {
++            CUDA_CHECK(cudaMemcpyAsync(static_cast<char *>(data) + suffix_offset,
++                static_cast<const char *>(tensor->data) + suffix_offset, size - suffix_offset,
++                cudaMemcpyDeviceToHost, cudaStreamPerThread));
++        }
++        const ggml_cuda_hybrid_layer & layer = ctx->layers.at(extra->layer);
++        memcpy(static_cast<char *>(data) + remote_offset,
++            layer.host + extra->slot_offset, extra->remote_size);
++    }
++    CUDA_CHECK(cudaStreamSynchronize(cudaStreamPerThread));
++}
++
++static void ggml_backend_cuda_hybrid_buffer_clear(ggml_backend_buffer_t buffer, uint8_t value) {
++    GGML_UNUSED(buffer);
++    GGML_UNUSED(value);
++}
++
++static const ggml_backend_buffer_i ggml_backend_cuda_hybrid_buffer_interface = {
++    /* .free_buffer     = */ ggml_backend_cuda_hybrid_buffer_free_buffer,
++    /* .get_base        = */ ggml_backend_cuda_hybrid_buffer_get_base,
++    /* .init_tensor     = */ ggml_backend_cuda_hybrid_buffer_init_tensor,
++    /* .memset_tensor   = */ nullptr,
++    /* .set_tensor      = */ ggml_backend_cuda_hybrid_buffer_set_tensor,
++    /* .get_tensor      = */ ggml_backend_cuda_hybrid_buffer_get_tensor,
++    /* .set_tensor_2d   = */ nullptr,
++    /* .get_tensor_2d   = */ nullptr,
++    /* .cpy_tensor      = */ nullptr,
++    /* .clear           = */ ggml_backend_cuda_hybrid_buffer_clear,
++    /* .reset           = */ nullptr,
++};
++
++static ggml_backend_buffer_t ggml_backend_cuda_hybrid_buffer_type_alloc_buffer(
++        ggml_backend_buffer_type_t buft, size_t size) {
++    auto * buft_ctx = static_cast<ggml_backend_cuda_hybrid_buffer_type_context *>(buft->context);
++    auto * ctx = new ggml_backend_cuda_hybrid_buffer_context{
++        buft_ctx->device, buft_ctx->remote_fraction, buft_ctx->remote_pages, size,
++    };
++    return ggml_backend_buffer_init(buft, ggml_backend_cuda_hybrid_buffer_interface, ctx, size);
++}
++
++static size_t ggml_backend_cuda_hybrid_buffer_type_get_alignment(ggml_backend_buffer_type_t buft) {
++    GGML_UNUSED(buft);
++    return 128;
++}
++
++static size_t ggml_backend_cuda_hybrid_buffer_type_get_alloc_size(
++        ggml_backend_buffer_type_t buft, const ggml_tensor * tensor) {
++    GGML_UNUSED(buft);
++    size_t size = ggml_nbytes(tensor);
++    const int64_t ne0 = tensor->ne[0];
++    if (ggml_is_quantized(tensor->type) && ne0 % MATRIX_ROW_PADDING != 0) {
++        GGML_ASSERT(tensor->nb[0] == ggml_element_size(tensor));
++        size += ggml_row_size(tensor->type, MATRIX_ROW_PADDING - ne0 % MATRIX_ROW_PADDING);
++    }
++    return size;
++}
++
++static bool ggml_backend_cuda_hybrid_buffer_type_is_host(ggml_backend_buffer_type_t buft) {
++    GGML_UNUSED(buft);
++    return false;
++}
++
++static const ggml_backend_buffer_type_i ggml_backend_cuda_hybrid_buffer_type_interface = {
++    /* .get_name         = */ ggml_backend_cuda_hybrid_buffer_type_get_name,
++    /* .alloc_buffer     = */ ggml_backend_cuda_hybrid_buffer_type_alloc_buffer,
++    /* .get_alignment    = */ ggml_backend_cuda_hybrid_buffer_type_get_alignment,
++    /* .get_max_size     = */ nullptr,
++    /* .get_alloc_size   = */ ggml_backend_cuda_hybrid_buffer_type_get_alloc_size,
++    /* .is_host          = */ ggml_backend_cuda_hybrid_buffer_type_is_host,
++};
++
++static ggml_backend_buffer_type_t ggml_backend_cuda_hybrid_buffer_type() {
++    static std::mutex mutex;
++    std::lock_guard<std::mutex> lock(mutex);
++    static std::map<int, ggml_backend_buffer_type> buft_map;
++
++    const char * value = getenv("GGML_CUDA_HYBRID_FRACTION");
++    const float fraction = std::max(0.000001f, std::min(0.95f,
++        value != nullptr ? std::strtof(value, nullptr) : 0.01f));
++    const char * pages_value = getenv("GGML_CUDA_HYBRID_PAGES");
++    const int remote_pages = pages_value != nullptr ? std::max(0, atoi(pages_value)) : 0;
++    const int key = int(std::lround(fraction * 1000000.0f)) ^ (remote_pages << 20);
++    auto it = buft_map.find(key);
++    if (it != buft_map.end()) {
++        return &it->second;
++    }
++
++    auto * ctx = new ggml_backend_cuda_hybrid_buffer_type_context{
++        0, fraction, remote_pages, GGML_CUDA_NAME "_Hybrid",
++    };
++    ggml_backend_buffer_type buft {
++        /* .iface   = */ ggml_backend_cuda_hybrid_buffer_type_interface,
++        /* .device  = */ ggml_backend_reg_dev_get(ggml_backend_cuda_reg(), 0),
++        /* .context = */ ctx,
++    };
++    auto result = buft_map.emplace(key, buft);
++    return &result.first->second;
++}
++
+ // host buffer type
+ 
+ static const char * ggml_backend_cuda_host_buffer_type_name(ggml_backend_buffer_type_t buft) {
+@@ -1500,7 +2041,7 @@ static void * ggml_cuda_host_malloc(size_t size) {
+     }
+ 
+     void * ptr = nullptr;
+-    cudaError_t err = cudaMallocHost((void **) &ptr, size);
++    cudaError_t err = cudaHostAlloc((void **) &ptr, size, cudaHostAllocMapped);
+     if (err != cudaSuccess) {
+         // clear the error
+         (void)cudaGetLastError();
+@@ -1520,6 +2061,8 @@ static ggml_backend_buffer_t ggml_backend_cuda_host_buffer_type_alloc_buffer(ggm
+         return ggml_backend_buft_alloc_buffer(ggml_backend_cpu_buffer_type(), size);
+     }
+ 
++    memset(ptr, 0, size);
++
+     ggml_backend_buffer_t buffer = ggml_backend_cpu_buffer_from_ptr(ptr, size);
+     buffer->buft = buft;
+     buffer->iface.free_buffer = ggml_backend_cuda_host_buffer_free_buffer;
+@@ -1534,7 +2077,7 @@ ggml_backend_buffer_type_t ggml_backend_cuda_host_buffer_type() {
+             /* .alloc_buffer     = */ ggml_backend_cuda_host_buffer_type_alloc_buffer,
+             /* .get_alignment    = */ ggml_backend_cpu_buffer_type()->iface.get_alignment,
+             /* .get_max_size     = */ NULL, // defaults to SIZE_MAX
+-            /* .get_alloc_size   = */ ggml_backend_cpu_buffer_type()->iface.get_alloc_size,
++            /* .get_alloc_size   = */ ggml_backend_cuda_buffer_type_get_alloc_size,
+             /* .is_host          = */ ggml_backend_cpu_buffer_type()->iface.is_host,
+         },
+         /* .device   = */ ggml_backend_reg_dev_get(ggml_backend_cuda_reg(), 0),
+@@ -2122,6 +2665,108 @@ static void ggml_cuda_op_mul_mat(
+     }
+ }
+ 
++// Historical row-split staging implementation, retained temporarily for an
++// A/B reference.  The VMM path above deliberately does not compile or call it.
++#if 0
++// Execute a matrix multiplication whose rows are split between local VRAM and
++// pinned system RAM.  Remote rows are copied through two alternating VRAM
++// buffers.  Copy N+1 can run while the main stream consumes buffer N; the first
++// copy also overlaps the local-row multiplication.
++static void ggml_cuda_op_mul_mat_hybrid(
++    ggml_backend_cuda_context & ctx,
++    const ggml_tensor * src0, const ggml_tensor * src1, ggml_tensor * dst,
++    ggml_cuda_op_mul_mat_t op, quantize_cuda_t quantize_src1) {
++
++    GGML_ASSERT(ggml_backend_buft_is_cuda_hybrid(src0->buffer->buft));
++    GGML_ASSERT(ctx.device == 0);
++    GGML_ASSERT(src0->ne[2] == 1 && src0->ne[3] == 1);
++    GGML_ASSERT(src1->ne[2] == 1 && src1->ne[3] == 1);
++    GGML_ASSERT(ggml_is_contiguous(src0));
++    GGML_ASSERT(ggml_is_contiguous(src1));
++    GGML_ASSERT(ggml_is_contiguous(dst));
++    GGML_ASSERT(src1->type == GGML_TYPE_F32 && dst->type == GGML_TYPE_F32);
++    GGML_ASSERT(quantize_src1 != nullptr);
++
++    auto * extra = static_cast<ggml_tensor_extra_hybrid *>(src0->extra);
++    GGML_ASSERT(extra != nullptr);
++
++    const int64_t ne10   = src1->ne[0];
++    const int64_t ne11   = src1->ne[1];
++    const int64_t nrows1 = ggml_nrows(src1);
++    const int64_t src1_padded_col_size = GGML_PAD(ne10, MATRIX_ROW_PADDING);
++    const size_t q8_1_ts = sizeof(block_q8_1);
++    const size_t q8_1_bs = QK8_1;
++
++    cudaStream_t main_stream = ctx.stream();
++    cudaStream_t copy_stream = extra->stage_stream[0];
++    const float * src1_ddf = static_cast<const float *>(src1->data);
++
++    ggml_cuda_pool_alloc<char> src1_ddq_alloc(ctx.pool(ctx.device));
++    size_t src1_ddq_size = nrows1 * src1_padded_col_size * q8_1_ts / q8_1_bs;
++    if (quantize_src1 == quantize_mmq_q8_1_cuda) {
++        src1_ddq_size += get_mmq_x_max_host(ggml_cuda_info().devices[ctx.device].cc) * sizeof(block_q8_1_mmq);
++    }
++    char * src1_ddq = src1_ddq_alloc.alloc(src1_ddq_size);
++    quantize_src1(
++        src1_ddf, nullptr, src1_ddq, src0->type, ne10,
++        src1->nb[1] / sizeof(float), src1->nb[2] / sizeof(float), src1->nb[3] / sizeof(float),
++        src1_padded_col_size, ne11, src1->ne[2], src1->ne[3], main_stream);
++    CUDA_CHECK(cudaGetLastError());
++
++    // The copy stream must not observe or reuse src1_ddq before its main-stream
++    // quantization is complete.  This event also orders scratch reuse from the
++    // preceding graph node because that node leaves its completion on main.
++    CUDA_CHECK(cudaEventRecord(extra->input_ready, main_stream));
++    CUDA_CHECK(cudaStreamWaitEvent(copy_stream, extra->input_ready, 0));
++
++    float * dst_dd = static_cast<float *>(dst->data);
++    op(ctx, src0, src1, dst, extra->data_device, src1_ddf, src1_ddq, dst_dd,
++        0, extra->row_split, ne11, src1_padded_col_size, main_stream);
++    CUDA_CHECK(cudaGetLastError());
++
++    const int64_t remote_rows = src0->ne[1] - extra->row_split;
++    constexpr size_t target_chunk_bytes = 16u * 1024u * 1024u;
++    const int64_t chunk_rows = std::max<int64_t>(1, std::min<int64_t>(remote_rows,
++        int64_t(target_chunk_bytes / std::max<size_t>(1, extra->row_size))));
++    const size_t stage_bytes = size_t(chunk_rows) * extra->row_size + extra->pad_size;
++
++    ggml_cuda_pool_alloc<char> stage_alloc_0(ctx.pool(ctx.device));
++    ggml_cuda_pool_alloc<char> stage_alloc_1(ctx.pool(ctx.device));
++    char * stage[2] = {
++        stage_alloc_0.alloc(stage_bytes),
++        stage_alloc_1.alloc(stage_bytes),
++    };
++
++    int64_t chunk_index = 0;
++    for (int64_t remote_row = 0; remote_row < remote_rows; remote_row += chunk_rows, ++chunk_index) {
++        const int slot = int(chunk_index & 1);
++        const int64_t rows = std::min<int64_t>(chunk_rows, remote_rows - remote_row);
++        const size_t bytes = size_t(rows) * extra->row_size;
++
++        // Do not overwrite a scratch slot until main has consumed its previous
++        // contents.  CUDA events may be safely waited on before their record is
++        // reached, which lets the host enqueue the whole two-stream pipeline.
++        if (chunk_index >= 2) {
++            CUDA_CHECK(cudaStreamWaitEvent(copy_stream, extra->stage_consumed[slot], 0));
++        }
++        CUDA_CHECK(cudaMemcpyAsync(stage[slot], extra->data_host + size_t(remote_row) * extra->row_size,
++            bytes, cudaMemcpyHostToDevice, copy_stream));
++        if (extra->pad_size != 0) {
++            CUDA_CHECK(cudaMemsetAsync(stage[slot] + bytes, 0, extra->pad_size, copy_stream));
++        }
++        CUDA_CHECK(cudaEventRecord(extra->remote_done[slot], copy_stream));
++
++        const int64_t row_low  = extra->row_split + remote_row;
++        const int64_t row_high = row_low + rows;
++        CUDA_CHECK(cudaStreamWaitEvent(main_stream, extra->remote_done[slot], 0));
++        op(ctx, src0, src1, dst, stage[slot], src1_ddf, src1_ddq, dst_dd + row_low,
++            row_low, row_high, ne11, src1_padded_col_size, main_stream);
++        CUDA_CHECK(cudaGetLastError());
++        CUDA_CHECK(cudaEventRecord(extra->stage_consumed[slot], main_stream));
++    }
++}
++#endif
++
+ static __global__ void k_compute_batched_ptrs(
+         const void * src0_as_f16, const void * src1_as_f16, char * dst,
+         const void ** ptrs_src, void ** ptrs_dst,
+@@ -2540,6 +3185,10 @@ static bool ggml_cuda_should_fuse_mul_mat_vec_q(const ggml_tensor * tensor) {
+ 
+ static void ggml_cuda_mul_mat(ggml_backend_cuda_context & ctx, const ggml_tensor * src0, const ggml_tensor * src1, ggml_tensor * dst) {
+     const bool split = ggml_backend_buft_is_cuda_split(src0->buffer->buft);
++    const bool hybrid = ggml_backend_buft_is_cuda_hybrid(src0->buffer->buft);
++    if (hybrid) {
++        ggml_cuda_hybrid_prepare_tensor(src0, ctx.stream());
++    }
+ 
+     // If src0 is a temporary compute buffer it may have some padding that needs to be cleared for mul_mat_vec_q or mul_mat_q.
+     // But if src0 is also a view of another tensor then this cannot be done safely because it may overwrite valid tensor data.
+@@ -2637,7 +3286,9 @@ static void ggml_cuda_mul_mat_id(ggml_backend_cuda_context & ctx, ggml_tensor *
+ 
+     GGML_ASSERT(src1->type == GGML_TYPE_F32);
+     GGML_ASSERT(dst->type  == GGML_TYPE_F32);
+-    GGML_ASSERT(!ggml_backend_buft_is_cuda_split(src0->buffer->buft) && "mul_mat_id does not support split buffers");
++    GGML_ASSERT(!ggml_backend_buft_is_cuda_split(src0->buffer->buft) &&
++                !ggml_backend_buft_is_cuda_hybrid(src0->buffer->buft) &&
++                "mul_mat_id does not support split or hybrid buffers");
+ 
+     GGML_TENSOR_BINARY_OP_LOCALS
+ 
+@@ -3264,7 +3915,8 @@ static bool ggml_cuda_graph_check_compability(ggml_cgraph * cgraph) {
+             continue;
+         }
+ 
+-        if (node->src[0] && node->src[0]->buffer && ggml_backend_buft_is_cuda_split(node->src[0]->buffer->buft)) {
++        if (node->src[0] && node->src[0]->buffer &&
++            ggml_backend_buft_is_cuda_split(node->src[0]->buffer->buft)) {
+             use_cuda_graph = false; // Split buffers are not supported by CUDA graph capture
+ #ifndef NDEBUG
+             GGML_LOG_DEBUG("%s: disabling CUDA graphs due to split buffer\n", __func__);
+@@ -4245,6 +4897,24 @@ static void ggml_cuda_graph_evaluate_and_capture(ggml_backend_cuda_context * cud
+     ggml_cuda_concurrent_event * concurrent_event           = nullptr;
+     bool                         should_launch_concurrent_events = false;
+ 
++    // A model normally has one Hybrid weight buffer.  Find it once per graph
++    // evaluation so ordinary (non-Hybrid) layer-start nodes can trigger an
++    // earlier prefetch than the first offloaded matrix in that layer.
++    ggml_backend_cuda_hybrid_buffer_context * hybrid_ctx = nullptr;
++    for (int i = 0; i < cgraph->n_nodes && hybrid_ctx == nullptr; ++i) {
++        for (int j = 0; j < GGML_MAX_SRC; ++j) {
++            const ggml_tensor * src = cgraph->nodes[i]->src[j];
++            if (src != nullptr && src->buffer != nullptr &&
++                ggml_backend_buft_is_cuda_hybrid(src->buffer->buft)) {
++                auto * extra = static_cast<ggml_tensor_extra_hybrid *>(src->extra);
++                if (extra != nullptr) {
++                    hybrid_ctx = extra->buffer_ctx;
++                    break;
++                }
++            }
++        }
++    }
++
+     const auto try_launch_concurrent_event = [&](const ggml_tensor * node) {
+         if (stream_ctx.concurrent_events.find(node) != stream_ctx.concurrent_events.end()) {
+             concurrent_event = &stream_ctx.concurrent_events[node];
+@@ -4380,6 +5050,24 @@ static void ggml_cuda_graph_evaluate_and_capture(ggml_backend_cuda_context * cud
+                     continue;
+                 }
+ 
++                if (hybrid_ctx != nullptr) {
++                    int layer = ggml_cuda_hybrid_layer_from_name(node->name);
++                    for (int j = 0; j < GGML_MAX_SRC && layer < 0; ++j) {
++                        if (node->src[j] != nullptr) {
++                            layer = ggml_cuda_hybrid_layer_from_name(node->src[j]->name);
++                        }
++                    }
++                    if (layer >= 0) {
++                        ggml_cuda_hybrid_prepare_layer(hybrid_ctx, layer, cuda_ctx->stream());
++                    }
++                }
++
++                // Do this before fusion: a fused MMVQ may consume several
++                // weights without entering ggml_cuda_mul_mat itself.
++                for (int j = 0; j < GGML_MAX_SRC; ++j) {
++                    ggml_cuda_hybrid_prepare_tensor(node->src[j], cuda_ctx->stream());
++                }
++
+                 int nodes_to_skip = ggml_cuda_try_fuse(cuda_ctx, cgraph, i);
+ 
+                 if (nodes_to_skip != 0) {
+@@ -4392,7 +5080,9 @@ static void ggml_cuda_graph_evaluate_and_capture(ggml_backend_cuda_context * cud
+                     if (node->src[j] != nullptr) {
+                         assert(node->src[j]->buffer);
+                         assert(node->src[j]->buffer->buft == ggml_backend_cuda_buffer_type(cuda_ctx->device) ||
+-                               ggml_backend_buft_is_cuda_split(node->src[j]->buffer->buft) || (integrated && ggml_backend_buft_is_cuda_host(node->src[j]->buffer->buft)));
++                               ggml_backend_buft_is_cuda_split(node->src[j]->buffer->buft) ||
++                               ggml_backend_buft_is_cuda_hybrid(node->src[j]->buffer->buft) ||
++                               (integrated && ggml_backend_buft_is_cuda_host(node->src[j]->buffer->buft)));
+                     }
+                 }
+ #else
+@@ -4409,6 +5099,12 @@ static void ggml_cuda_graph_evaluate_and_capture(ggml_backend_cuda_context * cud
+                     try_launch_concurrent_event(node);
+                }
+             }
++
++            // The last layer starts a ring-prefetch of layer zero.  Join it
++            // after the output work so the next graph iteration can consume it
++            // without a graph-entry event dependency.
++            ggml_cuda_hybrid_finish_graph(hybrid_ctx, cuda_ctx->stream());
++
+         }
+ 
+ #ifdef USE_CUDA_GRAPH
+@@ -4420,6 +5116,9 @@ static void ggml_cuda_graph_evaluate_and_capture(ggml_backend_cuda_context * cud
+             }
+ 
+             CUDA_CHECK(cudaStreamEndCapture(cuda_ctx->stream(), &graph->graph));
++            if (getenv("GGML_CUDA_HYBRID_AUDIT_GRAPHS") != nullptr) {
++                fprintf(stderr, "hybrid_graph_audit,event=capture_end,key=%p\n", graph_key);
++            }
+             graph_evaluated_or_captured = true; // CUDA graph has been captured
+ 
+             std::lock_guard<std::mutex> lock(ggml_cuda_lock);
+@@ -4441,6 +5140,11 @@ static void ggml_cuda_graph_evaluate_and_capture(ggml_backend_cuda_context * cud
+         }
+         // Launch graph
+         CUDA_CHECK(cudaGraphLaunch(graph->instance, cuda_ctx->stream()));
++        if (getenv("GGML_CUDA_HYBRID_AUDIT_GRAPHS") != nullptr) {
++            static std::atomic<uint64_t> hybrid_graph_launches{0};
++            const uint64_t launches = hybrid_graph_launches.fetch_add(1, std::memory_order_relaxed) + 1;
++            fprintf(stderr, "hybrid_graph_audit,event=launch,count=%" PRIu64 ",key=%p\n", launches, graph_key);
++        }
+ #else
+         GGML_UNUSED(graph_key);
+         graph_evaluated_or_captured = true;
+@@ -4517,6 +5221,9 @@ static enum ggml_status ggml_backend_cuda_graph_compute(ggml_backend_t backend,
+         }
+ 
+         CUDA_CHECK(cudaStreamBeginCapture(cuda_ctx->stream(), cudaStreamCaptureModeRelaxed));
++        if (getenv("GGML_CUDA_HYBRID_AUDIT_GRAPHS") != nullptr) {
++            fprintf(stderr, "hybrid_graph_audit,event=capture_begin,key=%p\n", graph_key);
++        }
+     }
+ 
+     ggml_cuda_graph_evaluate_and_capture(cuda_ctx, cgraph, use_cuda_graph, cuda_graph_update_required, graph_key);
+@@ -5054,10 +5761,12 @@ static ggml_backend_buffer_type_t ggml_backend_cuda_device_get_host_buffer_type(
+ static bool ggml_backend_cuda_device_supports_op(ggml_backend_dev_t dev, const ggml_tensor * op) {
+     ggml_backend_cuda_device_context * dev_ctx = (ggml_backend_cuda_device_context *) dev->context;
+ 
+-    // split buffers can only be used with GGML_OP_MUL_MAT
++    // split and hybrid buffers can only be used with GGML_OP_MUL_MAT
+     if (op->op != GGML_OP_MUL_MAT) {
+         for (int i = 0; i < GGML_MAX_SRC; i++) {
+-            if (op->src[i] && op->src[i]->buffer && ggml_backend_buft_is_cuda_split(op->src[i]->buffer->buft)) {
++            if (op->src[i] && op->src[i]->buffer &&
++                (ggml_backend_buft_is_cuda_split(op->src[i]->buffer->buft) ||
++                 ggml_backend_buft_is_cuda_hybrid(op->src[i]->buffer->buft))) {
+                 return false;
+             }
+         }
+@@ -5137,6 +5846,11 @@ static bool ggml_backend_cuda_device_supports_op(ggml_backend_dev_t dev, const g
+                         return false;
+                     }
+                 }
++                if (a->buffer && ggml_backend_buft_is_cuda_hybrid(a->buffer->buft)) {
++                    if (a->ne[2] != 1 || a->ne[3] != 1 || !ggml_is_contiguous(a) || op->op != GGML_OP_MUL_MAT) {
++                        return false;
++                    }
++                }
+                 if (b->type == GGML_TYPE_F16 && a->type != GGML_TYPE_F16) {
+                     return false;
+                 }
+@@ -5458,7 +6172,9 @@ static bool ggml_backend_cuda_device_supports_op(ggml_backend_dev_t dev, const g
+ static bool ggml_backend_cuda_device_supports_buft(ggml_backend_dev_t dev, ggml_backend_buffer_type_t buft) {
+     ggml_backend_cuda_device_context * dev_ctx = (ggml_backend_cuda_device_context *) dev->context;
+     const bool integrated = ggml_cuda_info().devices[dev_ctx->device].integrated;
+-    return (((ggml_backend_buft_is_cuda(buft) || ggml_backend_buft_is_cuda_split(buft)) && buft->device == dev) || (integrated && ggml_backend_buft_is_cuda_host(buft)));
++    return (((ggml_backend_buft_is_cuda(buft) || ggml_backend_buft_is_cuda_split(buft) ||
++              ggml_backend_buft_is_cuda_hybrid(buft)) && buft->device == dev) ||
++            (integrated && ggml_backend_buft_is_cuda_host(buft)));
+ }
+ 
+ static int64_t get_op_batch_size(const ggml_tensor * op) {
+@@ -5627,6 +6343,9 @@ static void * ggml_backend_cuda_reg_get_proc_address(ggml_backend_reg_t reg, con
+     if (strcmp(name, "ggml_backend_split_buffer_type") == 0) {
+         return (void *)ggml_backend_cuda_split_buffer_type;
+     }
++    if (strcmp(name, "ggml_backend_hybrid_buffer_type") == 0) {
++        return (void *)ggml_backend_cuda_hybrid_buffer_type;
++    }
+     if (strcmp(name, "ggml_backend_register_host_buffer") == 0) {
+         return (void *)ggml_backend_cuda_register_host_buffer;
+     }
+diff --git a/tools/llama-bench/llama-bench.cpp b/tools/llama-bench/llama-bench.cpp
+index 2695f58..5933138 100644
+--- a/tools/llama-bench/llama-bench.cpp
++++ b/tools/llama-bench/llama-bench.cpp
+@@ -895,6 +895,18 @@ static cmd_params parse_cmd_params(int argc, char ** argv) {
+                         if (buft) {
+                             buft_list[ggml_backend_buft_name(buft)] = buft;
+                         }
++                        auto * host_buft = ggml_backend_dev_host_buffer_type(dev);
++                        if (host_buft) {
++                            buft_list[ggml_backend_buft_name(host_buft)] = host_buft;
++                        }
++                        using hybrid_buft_fn_t = ggml_backend_buffer_type_t (*)();
++                        auto * reg = ggml_backend_dev_backend_reg(dev);
++                        auto hybrid_buft_fn = reinterpret_cast<hybrid_buft_fn_t>(
++                            ggml_backend_reg_get_proc_address(reg, "ggml_backend_hybrid_buffer_type"));
++                        if (hybrid_buft_fn != nullptr) {
++                            auto * hybrid_buft = hybrid_buft_fn();
++                            buft_list[ggml_backend_buft_name(hybrid_buft)] = hybrid_buft;
++                        }
+                     }
+                 }
+                 auto override_group_span_len = std::strcspn(value, ",");
+@@ -2089,6 +2101,40 @@ struct ctx_state {
+     std::vector<uint8_t> buf; // the llama_context state buffer
+ };
+ 
++static void maybe_print_logit_checksum(llama_context * ctx, const char * label) {
++    const char * checksum_env = std::getenv("LLAMA_BENCH_LOGIT_CHECKSUM");
++    const char * dump_path = std::getenv("LLAMA_BENCH_LOGIT_DUMP");
++    if (checksum_env == nullptr && dump_path == nullptr) {
++        return;
++    }
++    const llama_vocab * vocab = llama_model_get_vocab(llama_get_model(ctx));
++    const int32_t n_vocab = llama_vocab_n_tokens(vocab);
++    const float * logits = llama_get_logits_ith(ctx, -1);
++    uint64_t hash = 1469598103934665603ULL;
++    for (int32_t i = 0; i < n_vocab; ++i) {
++        uint32_t bits;
++        std::memcpy(&bits, logits + i, sizeof(bits));
++        for (int byte = 0; byte < 4; ++byte) {
++            hash ^= (bits >> (8 * byte)) & 0xffU;
++            hash *= 1099511628211ULL;
++        }
++    }
++    if (checksum_env != nullptr) {
++        std::fprintf(stderr, "logit_checksum,%s,%016" PRIx64 "\n", label, hash);
++    }
++    if (dump_path != nullptr) {
++        FILE * file = std::fopen(dump_path, "ab");
++        if (file == nullptr || std::fwrite(logits, sizeof(float), n_vocab, file) != size_t(n_vocab)) {
++            std::fprintf(stderr, "failed to dump logits to %s\n", dump_path);
++            if (file != nullptr) {
++                std::fclose(file);
++            }
++            std::abort();
++        }
++        std::fclose(file);
++    }
++}
++
+ static bool test_prompt(llama_context * ctx, int n_prompt, int n_batch, int n_threads) {
+     llama_set_n_threads(ctx, n_threads, n_threads);
+ 
+@@ -2115,6 +2161,7 @@ static bool test_prompt(llama_context * ctx, int n_prompt, int n_batch, int n_th
+     }
+ 
+     llama_synchronize(ctx);
++    maybe_print_logit_checksum(ctx, "prompt");
+     return true;
+ }
+ 
+@@ -2136,6 +2183,7 @@ static bool test_gen(llama_context * ctx, int n_gen, int n_threads) {
+         llama_synchronize(ctx);
+         token = std::rand() % n_vocab;
+     }
++    maybe_print_logit_checksum(ctx, "decode");
+     return true;
+ }
+ 

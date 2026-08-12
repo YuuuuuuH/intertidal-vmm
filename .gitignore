@@ -1,0 +1,8 @@
+__pycache__/
+*.py[cod]
+*.nsys-rep
+*.sqlite
+*.bin
+build/
+build-*/
+.DS_Store

@@ -1,0 +1,7 @@
+audit_memory,case=base,peak_mib=18080,samples=430
+audit_memory,case=vmm,peak_mib=17566,samples=410
+audit_memory,observed_delta_mib=514,internal_delta_mib=513.083
+audit_graph,capture_begin=2,capture_end=2,launches=65
+799e4d9029f1db9069d1b13b452e3d7c4085b71048994e7dc35cc4572a12305a  /dev/shm/audit-long-base.bin
+799e4d9029f1db9069d1b13b452e3d7c4085b71048994e7dc35cc4572a12305a  /dev/shm/audit-long-vmm.bin
+audit_logits,long_64_token_bitwise_identical=true

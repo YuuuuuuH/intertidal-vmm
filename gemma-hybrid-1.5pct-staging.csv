@@ -1,0 +1,2 @@
+target_pct,actual_pct,hybrid_fraction,remote_bytes,remote_MiB,covered_bytes,tensor_count,prefill_tok_s,prefill_std_tok_s,decode_tok_s,decode_std_tok_s,elapsed_s,status
+1.5,1.499499607,0.0299999993,259749504,247.716431,16524361728,132,508.556976,0.062135,50.298297,0.015194,11.876,ok

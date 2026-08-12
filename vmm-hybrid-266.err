@@ -1,0 +1,7 @@
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 32109 MiB):
+  Device 0: NVIDIA GeForce RTX 5090, compute capability 12.0, VMM: yes, VRAM: 32109 MiB
+hybrid_vmm,buffer_mib=13479.083,remote_mib=532.000,layers=60,local_physical_mib=12948.000,staging_mib=18.000,net_saved_mib=513.083,page_mib=2.000
+logit_checksum,prompt,812d23df51d8dd1a
+logit_checksum,prompt,65db52c916286788
+logit_checksum,decode,0c8e93b3ecced1c6
+logit_checksum,decode,4f8a1dd725615839
